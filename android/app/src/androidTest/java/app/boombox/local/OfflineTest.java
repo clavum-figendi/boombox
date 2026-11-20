@@ -10,6 +10,26 @@ import java.util.concurrent.TimeUnit;
 public class OfflineTest extends Instrumentation {
     @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
     private MainActivity app;
+    private volatile MainActivity resumed;
+    private volatile long resumedAt;
+    @Override public void callActivityOnResume(android.app.Activity activity) {
+        super.callActivityOnResume(activity);
+        if (activity instanceof MainActivity) {resumed=(MainActivity) activity;resumedAt=android.os.SystemClock.elapsedRealtime();}
+    }
+    @Override public void callActivityOnDestroy(android.app.Activity activity) {
+        if (resumed==activity) resumed=null;
+        super.callActivityOnDestroy(activity);
+    }
+    private MainActivity awaitStableActivity(MainActivity excluded) throws Exception {
+        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(45);
+        while (System.nanoTime()<deadline) {
+            MainActivity candidate=resumed;
+            // First-boot overlays can recreate the Activity after sys.boot_completed.
+            if (candidate!=null && candidate!=excluded && !candidate.isDestroyed() && candidate.bundledLoads>0 && android.os.SystemClock.elapsedRealtime()-resumedAt>=3000) return candidate;
+            Thread.sleep(100);
+        }
+        throw new AssertionError("No stable resumed bundled Activity");
+    }
     private String eval(String script) throws Exception {
         Bundle progress = new Bundle();progress.putString("stream", "EVAL: " + script + "\n");sendStatus(0, progress);
         ArrayBlockingQueue<String> q = new ArrayBlockingQueue<>(1);
@@ -41,8 +61,13 @@ public class OfflineTest extends Instrumentation {
         Bundle result = new Bundle();
         try {
             Intent launch = new Intent(getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            app = (MainActivity) startActivitySync(launch);
-            awaitBundledLoad(0);
+            startActivitySync(launch);
+            app=awaitStableActivity(null);
+            // Deterministic regression: never keep evaluating a destroyed WebView.
+            MainActivity previous=app;
+            runOnMainSync(() -> {if (resumed==previous && !previous.isDestroyed()) previous.recreate();});
+            app=awaitStableActivity(previous);
+            if (app==previous || !previous.isDestroyed()) throw new AssertionError("Activity recreation was not followed by the harness");
             eval("1+1");
             long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
             while (!"true".equals(eval("location.href==='https://boombox.local/' && document.documentElement.dataset.ready==='true' && !!window.boombox"))) {
@@ -81,7 +106,7 @@ public class OfflineTest extends Instrumentation {
             }
             if (!"true".equals(eval("window.boombox.engine.playing && document.querySelector('#timer').value==='0'"))) throw new AssertionError("Automatic variation should continue unlimited playback");
             eval("document.querySelector('#stop').click();true");
-            result.putString("stream", "BOOMBOX_OFFLINE_AUDIO_PASS: cold launch, dark default, audio, stop, fresh reload, Lydian/FM controls and automatic variation with no stop timer\n");
+            result.putString("stream", "BOOMBOX_OFFLINE_AUDIO_PASS: cold launch, recreated Activity, dark default, audio, stop, fresh reload, Lydian/FM controls and automatic variation with no stop timer\n");
             finish(ActivityResult.OK, result);
         } catch (Throwable e) { result.putString("stream", "FAIL: " + e + "\n"); finish(ActivityResult.FAIL, result); }
     }
