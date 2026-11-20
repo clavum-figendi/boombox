@@ -1,10 +1,20 @@
-import { STYLES, defaultSettings, applyStyle, Engine } from './engine.js';
+import { STYLES, defaultSettings, applyStyle, randomizePreset, Engine } from './engine.js';
 import { compile, EXAMPLES } from './code.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const LANES = ['kick', 'snare', 'hat', 'bass', 'lead', 'pad'];
 const STORE = 'boombox.project.v1', LOOK = 'boombox.look.v1';
+const VISITS = 'boombox.freshVisits.v1', WELCOME = 'boombox.welcome.v1';
+let freshVisits = true;
+function freshSound(key = settings.style) {
+  const words = new Uint32Array(1);
+  let seed;
+  do { crypto.getRandomValues(words); seed = words[0] & 0x7fffffff; } while (!seed || seed === settings.seed);
+  const master = settings.master;
+  randomizePreset(settings,key,seed);
+  settings.master = master;
+}
 const LIMITS = { bpm:[40,240], seed:[1,2147483647], root:[0,11], swing:[0,.45], density:[0,1], master:[0,1], cutoff:[40,20000], resonance:[0,18], drive:[0,1], delay:[0,.8], reverb:[0,1] };
 const SCALES = ['minor','major','dorian','phrygian','pentatonic'];
 const WAVES = ['sine','triangle','sawtooth','square'];
@@ -63,6 +73,8 @@ try {
     if(typeof savedLook.motion==='boolean') look.motion=savedLook.motion;
   }
 } catch { announce('Stored project could not be read. Starting fresh; export JSON to keep a backup.'); }
+try { freshVisits = localStorage.getItem(VISITS) !== 'false'; } catch { /* Local preferences are optional. */ }
+if (freshVisits) freshSound();
 const engine = new Engine(settings);
 window.boombox = { engine, get settings() { return settings; } };
 function persist() {
@@ -85,10 +97,20 @@ function rangeControl(title,value,min,max,step,onInput,format=n=>`${Math.round(n
   label.append(output,input); input.addEventListener('input',()=>{output.textContent=format(Number(input.value));onInput(Number(input.value));}); return label;
 }
 const genreMarks = {techno:'╎╎╎╎',house:'⌁⌁',dnb:'╱╲╱',psytrance:'⋰⋱',breakbeat:'╎╎·╎',hardcore:'╱╱╱',acid:'∿∿',dub:'◦◯'};
+const voiceHints = {
+  kick:'The low drum thump marks the pulse; gain balances its punch.',
+  bass:'Pitched low notes add movement beneath the kick. Leave room for both.',
+  snare:'The crisp backbeat gives the rhythm its snap.',
+  hat:'Bright noise ticks subdivide the beat and add pace.',
+  lead:'The foreground melody. Gain brings it forward; steps place notes and Density adds activity.',
+  pad:'A sustained chord bed behind the melody. Longer decay lets chords overlap.'
+};
+const toneHints = {wave:'Wave changes tone: sine is round, triangle soft, saw bright, square hollow. Percussion has its own voice shaping.',decay:'Decay is how long a voice rings after each hit, in seconds.'};
+const effectHints = {cutoff:'Cutoff removes brightness above this frequency. Lower it for a darker mix.',resonance:'Resonance emphasizes the filter edge. High values can become piercing; start gently.',drive:'Drive adds grit and harmonics to the mix.',delay:'Delay adds rhythmic echoes.',reverb:'Reverb adds a room-like tail and space.'};
 for(const [key,style] of Object.entries(STYLES)) {
   const b=make('button','genre'); b.type='button'; b.dataset.genre=key; b.setAttribute('aria-pressed',String(key===settings.style));
   b.append(make('span','genre-mark',genreMarks[key]||'∿'),make('span','genre-name',style.name),make('small','',String(style.bpm)));
-  b.title=style.description; b.addEventListener('click',()=>{applyStyle(settings,key);updateSound();renderSettings();announce(`${style.name} loaded. Make it yours.`);}); $('#genres').append(b);
+  b.title=style.description; b.addEventListener('click',()=>{freshSound(key);updateSound();renderSettings();announce(`${style.name} variation loaded. Make it yours.`);}); $('#genres').append(b);
 }
 ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'].forEach((note,i)=>{const o=make('option','',note);o.value=i;$('#root').append(o);});
 function renderSequencer() {
@@ -106,19 +128,20 @@ function renderSequencer() {
 function renderMixer() {
   $('#mixer').replaceChildren();
   LANES.forEach(lane=>{
-    const ch=settings.channels[lane], strip=make('section','channel');strip.append(make('h3','',lane));
+    const ch=settings.channels[lane], strip=make('section','channel');strip.dataset.channel=lane;strip.append(make('h3','',lane),make('p','fine',voiceHints[lane]));strip.title=voiceHints[lane];
     const switches=make('div','mute-solo');
-    for(const key of ['mute','solo']) { const b=make('button','',key==='mute'?'M':'S');b.setAttribute('aria-label',`${key} ${lane}`);b.setAttribute('aria-pressed',String(ch[key]));b.addEventListener('click',()=>{ch[key]=!ch[key];b.setAttribute('aria-pressed',String(ch[key]));updateSound();});switches.append(b); }
+    for(const key of ['mute','solo']) { const b=make('button','',key==='mute'?'M':'S');b.title=key==='mute'?'Mute silences this voice.':'Solo isolates this voice; multiple solos can play together.';b.setAttribute('aria-label',`${key} ${lane}`);b.setAttribute('aria-pressed',String(ch[key]));b.addEventListener('click',()=>{ch[key]=!ch[key];b.setAttribute('aria-pressed',String(ch[key]));updateSound();});switches.append(b); }
     strip.append(switches,rangeControl(`${lane} gain`,ch.gain,0,1,.01,value=>{ch.gain=value;updateSound();}));
     const label=make('label','control','Wave'), select=make('select');select.setAttribute('aria-label',`${lane} waveform`);
-    WAVES.forEach(w=>{const o=make('option','',w.replace('sawtooth','saw'));o.value=w;select.append(o);});select.value=ch.wave;select.addEventListener('change',()=>{ch.wave=select.value;updateSound();});label.append(select);
+    WAVES.forEach(w=>{const o=make('option','',w.replace('sawtooth','saw'));o.value=w;select.append(o);});select.value=ch.wave;select.title=toneHints.wave;select.addEventListener('change',()=>{ch.wave=select.value;updateSound();});label.append(select);
     if(lane!=='hat')strip.append(label);
     else strip.append(make('p','fine','Noise percussion'));
-    strip.append(rangeControl(`${lane} decay`,ch.decay,.03,4,.01,value=>{ch.decay=value;updateSound();},n=>`${n.toFixed(2)}s`));$('#mixer').append(strip);
+    const decay=rangeControl(`${lane} decay`,ch.decay,.03,4,.01,value=>{ch.decay=value;updateSound();},n=>`${n.toFixed(2)}s`);decay.title=toneHints.decay;
+    strip.append(decay,make('p','fine','Wave = tone · Decay = ring length'));$('#mixer').append(strip);
   });
   $('#effects').replaceChildren();
   const fx=[['cutoff','Cutoff',40,20000,10,n=>`${Math.round(n)} Hz`],['resonance','Resonance',0,18,.1,n=>n.toFixed(1)],['drive','Drive',0,1,.01],['reverb','Reverb',0,1,.01],['delay','Delay',0,.8,.01]];
-  fx.forEach(([key,title,min,max,step,format])=>$('#effects').append(rangeControl(title,settings[key],min,max,step,value=>{settings[key]=value;updateSound();},format)));
+  fx.forEach(([key,title,min,max,step,format])=>{const control=rangeControl(title,settings[key],min,max,step,value=>{settings[key]=value;updateSound();},format);control.dataset.effect=key;control.title=effectHints[key];control.append(make('span','fine',effectHints[key]));$('#effects').append(control);});
 }
 function syncReadouts() {
   const style=STYLES[settings.style]; $('#styleTitle').replaceChildren(document.createTextNode(style.name),make('span','','.'));
@@ -134,10 +157,8 @@ $$('[data-setting]').forEach(input=>input.addEventListener('input',()=>{
   updateSound();
 }));
 $('#variation').addEventListener('click',()=>{
-  settings.seed=Math.floor(Math.random()*2147483646)+1;
-  const fresh=defaultSettings();applyStyle(fresh,settings.style);
-  LANES.forEach((lane,row)=>{settings.patterns[lane]=fresh.patterns[lane].map((on,i)=>Math.random()<(row<3?.08:.2)&&i%4!==0?!on:on);});
-  updateSound();renderSettings();announce(`New variation · seed ${settings.seed}. Mix and tone preserved.`);
+  freshSound();
+  updateSound();renderSettings();announce(`New genre variation · seed ${settings.seed}. Master volume preserved.`);
 });
 $$('[data-view]').forEach(b=>b.addEventListener('click',()=>{
   $$('[data-view]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
@@ -149,19 +170,73 @@ $$('[data-open]').forEach(b=>b.addEventListener('click',()=>{opener=b;$('#'+b.da
 $$('dialog').forEach(dialog=>{
   dialog.querySelector('[data-close]').addEventListener('click',()=>dialog.close());
   dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
-  dialog.addEventListener('close',()=>opener?.focus());
+  dialog.addEventListener('close',()=>{if(dialog.id!=='tourSheet')opener?.focus();});
   dialog.addEventListener('keydown',e=>{
     if(e.key!=='Tab')return;
     const controls=[...dialog.querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].filter(el=>!el.disabled&&el.tabIndex>=0&&el.getClientRects().length);
-    const first=controls[0],last=controls.at(-1);
+    const first=controls[0],last=controls[controls.length-1];
     if(!first)return;
     if(e.shiftKey&&(document.activeElement===first||document.activeElement===dialog)){e.preventDefault();last.focus();}
     else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
   });
 });
+const tourSteps = [
+  {title:'Kick vs bass',text:'Kick is a short drum thump; bass plays pitched low notes. Try lowering kick gain a little, then compare the bass level. Keep master low when you listen.',voices:['kick','bass']},
+  {title:'Hats & snare',text:'Hats are bright timekeeping ticks; snare adds the backbeat. Short hat decay is tight, longer decay adds a wash. Try muting one voice to hear what it contributes.',voices:['hat','snare']},
+  {title:'Lead: your melody',text:'Lead carries the tune. Gain brings it forward, lit steps decide when notes play, and Density controls generated activity. Try toggling a lead step or lowering Density for more space.',voices:['lead'],melody:true},
+  {title:'Pad, wave & decay',text:'Pad fills the space behind the lead with chords. Wave chooses the tone: sine is round, saw is bright, square is hollow. Decay chooses how long a note rings. Try a softer wave or shorter decay.',voices:['pad']},
+  {title:'Filter & resonance',text:'Cutoff darkens or opens the shared mix. Resonance accents the filter edge. Try lowering cutoff, then gently adding resonance; high resonance can be sharp.',effects:['cutoff','resonance']},
+  {title:'Drive, delay & reverb',text:'Drive adds grit, delay repeats echoes, reverb adds space. Try reducing one effect to hear a drier, clearer groove. These affect every voice together.',effects:['drive','delay','reverb']},
+  {title:'Mute, solo & master',text:'M mutes a voice; S solos it. Multiple soloed voices play together. Master controls overall listening level, not the balance between instruments. Nothing here starts audio: finish, then press Play when ready.',voices:['lead'],master:true}
+];
+let tourIndex=0, tourOpener;
+function dismissWelcome() {
+  $('#welcome').hidden=true;
+  try { localStorage.setItem(WELCOME,'seen'); } catch { /* Dismissal still works for this visit. */ }
+}
+try { $('#welcome').hidden=localStorage.getItem(WELCOME)==='seen'; } catch { $('#welcome').hidden=false; }
+$('#dismissWelcome').addEventListener('click',()=>{dismissWelcome();$('#play').focus();});
+function renderTour() {
+  const step=tourSteps[tourIndex], controls=$('#tourControls');
+  renderMixer();controls.replaceChildren();
+  $('#tourTitle').textContent=step.title;$('#tourText').textContent=step.text;
+  $('#tourProgress').textContent=`INSTRUMENT TOUR / ${tourIndex+1} OF ${tourSteps.length}`;
+  for(const lane of step.voices||[])controls.append($(`#mixer [data-channel="${lane}"]`));
+  for(const effect of step.effects||[])controls.append($(`#effects [data-effect="${effect}"]`));
+  if(step.melody) {
+    controls.append(rangeControl('Melody density',settings.density,0,1,.01,value=>{settings.density=value;$('#density').value=value;updateSound();}));
+    const steps=make('div','tour-steps');steps.setAttribute('aria-label','Lead melody steps');
+    for(let i=0;i<16;i++) {
+      const b=make('button','',String(i+1));b.setAttribute('aria-label',`Tour lead step ${i+1}`);b.setAttribute('aria-pressed',String(settings.patterns.lead[i]));
+      b.addEventListener('click',()=>{settings.patterns.lead[i]=!settings.patterns.lead[i];b.setAttribute('aria-pressed',String(settings.patterns.lead[i]));updateSound();renderSequencer();});steps.append(b);
+    }
+    controls.append(steps);
+  }
+  if(step.master)controls.append(rangeControl('Tour master volume',settings.master,0,1,.01,value=>{settings.master=value;$('#master').value=value;updateSound();}));
+  $('#tourBack').disabled=tourIndex===0;$('#tourNext').textContent=tourIndex===tourSteps.length-1?'Done':'Next';
+  $('#tourSheet').scrollTop=0;$('#tourTitle').focus();
+}
+function openTour(button,index=0) {
+  tourOpener=button;tourIndex=index;
+  // Keep the inline welcome until closing so focus can return to its launch button.
+  try { localStorage.setItem(WELCOME,'seen'); } catch { /* The tour also works without storage. */ }
+  $('#tourSheet').showModal();renderTour();
+}
+$$('[data-tour]').forEach(button=>button.addEventListener('click',()=>openTour(button)));
+$('#melodyQuick').addEventListener('click',e=>openTour(e.currentTarget,2));
+$('#tourNext').addEventListener('click',()=>{if(tourIndex===tourSteps.length-1)$('#tourSheet').close();else {tourIndex++;renderTour();}});
+$('#tourBack').addEventListener('click',()=>{if(tourIndex>0){tourIndex--;renderTour();}});
+$('#tourSkip').addEventListener('click',()=>$('#tourSheet').close());
+$('#tourSheet').addEventListener('close',()=>{renderSettings();tourOpener?.focus();});
 $('#theme').addEventListener('change',e=>{look.theme=e.target.value;saveLook();});
 $('#textSize').addEventListener('change',e=>{look.textSize=e.target.value;saveLook();});
 $('#motion').addEventListener('change',e=>{look.motion=e.target.checked;saveLook();});
+$('#freshVisits').checked=freshVisits;
+$('#freshVisits').addEventListener('change',e=>{
+  freshVisits=e.target.checked;
+  try { localStorage.setItem(VISITS,String(freshVisits)); }
+  catch { announce('Visit preference applies now, but browser storage is unavailable.','#settingsStatus'); }
+});
 function syncPlay() {
   document.body.classList.toggle('is-playing',!!engine.playing);$('#play').replaceChildren(document.createTextNode(engine.playing?'Ⅱ ':'▶ '),make('span','',engine.playing?'Pause':'Play'));
   $('#play').setAttribute('aria-label',engine.playing?'Pause groovebox':'Play groovebox');$('#playState').textContent=engine.playing?'PLAYING':'STANDBY';scheduleVisuals();drawScore();
@@ -238,7 +313,7 @@ $('#crossfader').addEventListener('input',guarded(e=>engine.crossfade(Number(e.t
 for(const name of Object.keys(EXAMPLES)){const o=make('option','',name);o.value=name;$('#codeExample').append(o);}
 $('#codeEditor').value=code;
 $('#codeEditor').maxLength=64000;
-$('#codeHint').append(make('p','','One global code tempo: the final use_bpm applies to every code loop. Sleep and attack/sustain/release values are in beats. This tempo is independent of the groovebox. Synths: sine, saw, square, tri, bass, prophet, beep. Samples: bd_haus, bd_tek, sn_dub, drum_snare_hard, drum_cymbal_closed, drum_cymbal_open. Repeat with 4.times do … end; general Ruby, variables, functions and with_fx are not supported.'));
+$('#codeHint').append(make('p','','One global code tempo: the final use_bpm applies to every code loop, independently of the groovebox. Sleep and attack/sustain/release values are in beats. Synths: sine, saw, square, tri, bass, prophet, beep. Samples: bd_haus, bd_tek, sn_dub, drum_snare_hard, drum_cymbal_closed, drum_cymbal_open. Repeat a phrase with 4.times do … end. Use the commands listed here and the included examples to build your loops.'));
 $('#codeEditor').addEventListener('input',()=>{code=$('#codeEditor').value;persist();});
 $('#codeExample').addEventListener('change',e=>{code=EXAMPLES[e.target.value];$('#codeEditor').value=code;persist();announce('Example loaded. Run it to hear the changes.','#codeStatus');});
 $('#runCode').addEventListener('click',guarded(async()=>{const program=compile($('#codeEditor').value);await initAudio();await engine.runCode(program);announce('Code running locally. Stop code silences this part only.','#codeStatus');},'#codeStatus'));
@@ -280,7 +355,7 @@ if(window.BoomboxAndroid&&location.origin==='https://boombox.local') {
 } else if('serviceWorker' in navigator)offlineRequest('CHECK_OFFLINE').then(showOffline).catch(error=>{$('#offlineStatus').textContent=errorMessage(error);});
 // Keep the focused control clear of the fixed transport without scrolling the whole page sideways.
 document.addEventListener('focusin',e=>{if(e.target.closest('dialog,.transport')||!e.target.getBoundingClientRect)return;requestAnimationFrame(()=>{const bottom=e.target.getBoundingClientRect().bottom,top=$('.transport').getBoundingClientRect().top;if(bottom>top-12)window.scrollBy(0,bottom-top+20);});});
-renderSettings();saveLook();syncPlay();decks.forEach((d,i)=>drawWave(i));
+renderSettings();persist();saveLook();syncPlay();decks.forEach((d,i)=>drawWave(i));
 const chromium=/Chrom(?:e|ium)\/(\d+)/.exec(navigator.userAgent);
 if(chromium&&Number(chromium[1])<90)announce('Please update Android System WebView / Chrome to Chromium 90 or newer. This instrument requires a modern browser.');
 $('#helpSheet').append(make('p','fine','Browser and Android playback are foreground-only; the OS may suspend audio in the background. Android requires an updated System WebView (Chromium 90 or newer).'));

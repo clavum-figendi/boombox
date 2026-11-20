@@ -15,7 +15,7 @@ CHROME = os.environ.get('CHROMIUM_EXECUTABLE')
 SOURCE = 'use_bpm 87\nlive_loop :test do\n  sample :bd_haus\n  sleep 1\nend\n'
 
 
-class UIRegression(unittest.TestCase):
+class UIHarness(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         OUT.mkdir(exist_ok=True)
@@ -75,6 +75,7 @@ class UIRegression(unittest.TestCase):
             locator.press('ArrowRight')
         self.assertAlmostEqual(float(locator.input_value()), value, places=5)
 
+class UIRegression(UIHarness):
     def test_live_remix_code_and_exports(self):
         page = self.page
         fixture = OUT / 'ui-tone.wav'
@@ -238,6 +239,9 @@ class UIRegression(unittest.TestCase):
         page.wait_for_function("document.documentElement.dataset.ready === 'true'")
         self.assertEqual(page.locator('#codeEditor').input_value(), example)
         # Historical raw settings storage still loads without an envelope.
+        self.settings()
+        page.locator('#freshVisits').uncheck()
+        page.keyboard.press('Escape')
         page.evaluate("s=>localStorage.setItem('boombox.project.v1',JSON.stringify(s))", project['settings'])
         page.reload()
         page.wait_for_function("document.documentElement.dataset.ready === 'true'")

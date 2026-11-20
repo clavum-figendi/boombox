@@ -5,7 +5,7 @@ import {defaultSettings,applyStyle,patternEvents,STYLES,Engine} from '../web/js/
 
 test('styles generate distinct deterministic musical patterns without shared state',()=>{
  const settings=defaultSettings(), other=defaultSettings();
- assert.equal(settings.bpm,132); assert.equal(settings.style,'techno');
+ assert.equal(settings.bpm,STYLES.techno.bpm); assert.equal(settings.style,'techno');
  const signatures=new Set();
  for(const style of Object.keys(STYLES)) {
   applyStyle(settings,style);
@@ -86,13 +86,20 @@ with sync_playwright() as p:
  page=browser.new_page()
  page.goto(os.environ['BOOMBOX_AUDIO_TEST_URL'])
  result=page.evaluate('''async()=>{
- const {Engine,defaultSettings,applyStyle,STYLES}=await import('./js/engine.js');
+ const {Engine,defaultSettings,applyStyle,randomizePreset,STYLES}=await import('./js/engine.js');
  const {compile}=await import('./js/code.js');
  const rms=(a,start=0,end=a.length)=>{let sum=0;for(let i=start;i<end;i++)sum+=a[i]*a[i];return Math.sqrt(sum/(end-start));};
  const diff=(a,b)=>rms(a.map((x,i)=>x-b[i]));
  const check=(ok,message)=>{if(!ok)throw Error(message);};
  async function voice(event){const ctx=new OfflineAudioContext(1,88200,44100),engine=new Engine();engine.context=ctx;engine.graph={channels:{[event.instrument]:ctx.destination}};engine.trigger(event,0);return (await ctx.startRendering()).getChannelData(0);}
- const out={drums:{},styles:{},effects:{}};
+ const out={drums:{},styles:{},effects:{},presets:{}};
+ const kick=await voice({instrument:'kick',wave:'sine',duration:.42,amp:.8}),crossings=[];
+ for(let i=1;i<kick.length;i++)if(kick[i-1]<0&&kick[i]>=0)crossings.push(i/44100);
+ const early=1/(crossings[1]-crossings[0]),late=crossings.filter(t=>t>.15&&t<.3);
+ out.kick={earlyHz:early,settledHz:(late.length-1)/(late[late.length-1]-late[0]),rms:rms(kick,441,13230)};
+ check(out.kick.earlyHz<115,'kick attack must be rounded, not a bright 150 Hz transient');
+ check(out.kick.settledHz>41&&out.kick.settledHz<42.7,'kick must settle to a deep 42 Hz sub');
+ check(out.kick.rms>.005,'deep kick must be audible');
  for(const instrument of ['kick','snare']){
   const base={instrument,duration:.3,amp:.8,note:48};
   out.drums[instrument]=diff(await voice({...base,wave:'sine'}),await voice({...base,wave:'square'}));
@@ -104,7 +111,15 @@ with sync_playwright() as p:
  check(out.attack.late>out.attack.early*3,'attack must rise rather than immediately decay');
  check(out.attack.tail<1e-7,'envelope must finish');
  async function render(settings,seconds=2){const wav=await new Engine(settings).exportWav(seconds),ctx=new OfflineAudioContext(1,44100,44100);return (await ctx.decodeAudioData(await wav.arrayBuffer())).getChannelData(0);}
- for(const style of Object.keys(STYLES)){const s=defaultSettings();applyStyle(s,style);out.styles[style]=rms(await render(s));check(out.styles[style]>1e-4,style+' silent');}
+ for(const style of Object.keys(STYLES)){
+  const s=defaultSettings();applyStyle(s,style);out.styles[style]=rms(await render(s));check(out.styles[style]>1e-4,style+' silent');
+  out.presets[style]=[];
+  for(const seed of [1,42,98765]){
+   randomizePreset(s,style,seed);const pcm=await render(s),level=rms(pcm);let peak=0;
+   for(const sample of pcm){check(Number.isFinite(sample),'non-finite PCM');peak=Math.max(peak,Math.abs(sample));}
+   out.presets[style].push({seed,rms:level,peak});check(level>.001&&peak<1,style+' randomized audio must be audible without clipping');
+  }
+ }
  const s=defaultSettings();s.bpm=30;s.delay=0;s.reverb=0;s.drive=0;s.cutoff=18000;s.resonance=.1;
  for(const [name,pattern] of Object.entries(s.patterns)){pattern.fill(false);if(name==='kick')pattern[0]=true;}
  const dry=await render(s,6);

@@ -2,7 +2,7 @@ const CHANNELS=['kick','snare','hat','bass','lead','pad'];
 const clamp=(n,min,max)=>Math.max(min,Math.min(max,Number.isFinite(Number(n))?Number(n):min));
 const rng=seed=>()=>{seed=(Math.imul(1664525,seed)+1013904223)>>>0;return seed/4294967296;};
 export const STYLES={
- techno:{name:'Techno',bpm:132,description:'Driving four-on-the-floor, metallic hats and minor stabs.'},
+ techno:{name:'Techno',bpm:126,description:'Deep rounded kicks, warm sub bass and restrained shadowy stabs.'},
  house:{name:'House',bpm:124,description:'Offbeat hats, warm chords and a rolling syncopated bass.'},
  dnb:{name:'Drum & bass',bpm:174,description:'Broken kicks, snapping backbeats and heavy sub bass.'},
  psytrance:{name:'Psytrance',bpm:145,description:'Relentless rolling sixteenths and hypnotic arpeggios.'},
@@ -12,7 +12,7 @@ export const STYLES={
  dub:{name:'Dub',bpm:72,description:'Spacious one-drop drums, deep bass and echo chords.'}
 };
 const RHYTHMS={
- techno:['0,4,8,12','4,12','2,6,10,14','0,3,6,8,11,14','2,7,10,15','0'],
+ techno:['0,4,8,12','4,12','2,6,10,14','0,3,6,8,11,14','7,15','0'],
  house:['0,4,8,12','4,12','2,6,10,14','0,3,7,8,10,14','0,6,10','0,8'],
  dnb:['0,6,10','4,12','0,2,4,6,8,10,12,14','0,6,8,11','3,10,14','0'],
  psytrance:['0,4,8,12','4,12','2,6,10,14','1,2,3,5,6,7,9,10,11,13,14,15','0,3,6,9,12,15','0'],
@@ -22,16 +22,75 @@ const RHYTHMS={
  dub:['8','8','2,6,10,14','0,6,10','6,14','4,12']
 };
 export function defaultSettings(){
- const channels=Object.fromEntries(CHANNELS.map((name,i)=>[name,{gain:[.8,.55,.32,.55,.3,.2][i],mute:false,solo:false,wave:i===1?'triangle':i<3?'sine':i===5?'triangle':'sawtooth',decay:[.3,.18,.055,.18,.22,1.1][i]}]));
- const settings={style:'techno',bpm:132,seed:42,root:0,scale:'minor',swing:0,density:.65,master:.65,cutoff:3000,resonance:3,drive:.2,delay:.2,reverb:.15,channels,patterns:{}};
- applyStyle(settings,'techno');return settings;
+ return applyStyle({seed:42,master:.65},'techno');
 }
 export function applyStyle(settings,key){
- if(!STYLES[key]) throw new RangeError(`Unknown style: ${key}`);
+ if(!Object.prototype.hasOwnProperty.call(STYLES,key)) throw new RangeError(`Unknown style: ${key}`);
  settings.style=key;settings.bpm=STYLES[key].bpm;
  settings.patterns=Object.fromEntries(CHANNELS.map((name,i)=>[name,Array.from({length:16},(_,step)=>RHYTHMS[key][i].split(',').map(Number).includes(step))]));
  Object.assign(settings,{swing:key==='house'?.16:key==='breakbeat'?.1:0,cutoff:key==='dub'?1400:key==='acid'?1700:3000,resonance:key==='acid'?12:3,drive:key==='hardcore'?.7:.2,delay:key==='dub'?.5:.2,reverb:key==='dub'?.35:.15});
- if(settings.channels){settings.channels.bass.wave=key==='dub'||key==='dnb'?'sine':'sawtooth';settings.channels.kick.decay=key==='hardcore'?.45:.3;}
+ settings.root=0;settings.scale='minor';settings.density=.65;
+ settings.channels=Object.fromEntries(CHANNELS.map((name,i)=>[name,{gain:[.8,.55,.32,.55,.3,.2][i],mute:false,solo:false,wave:i===1?'triangle':i<3?'sine':i===5?'triangle':'sawtooth',decay:[.3,.18,.055,.18,.22,1.1][i]}]));
+ settings.channels.bass.wave=key==='dub'||key==='dnb'?'sine':'sawtooth';settings.channels.kick.decay=key==='hardcore'?.45:.3;
+ if(key==='techno'){
+  Object.assign(settings,{cutoff:1150,resonance:.8,drive:.035,delay:.12,reverb:.12,density:.28});
+  Object.assign(settings.channels.kick,{gain:.88,decay:.42});
+  Object.assign(settings.channels.bass,{gain:.62,wave:'sine',decay:.25});
+  Object.assign(settings.channels.lead,{gain:.045,wave:'triangle'});
+  Object.assign(settings.channels.pad,{gain:.055,wave:'sine'});
+ }
+ return settings;
+}
+// Ranges describe related musical families, not independent full-range noise.
+const PRESET_VOICES={
+ techno:{tempo:[122,130],cutoff:[700,1650],q:[.4,1.8],drive:[.015,.085],space:[.06,.23],swing:[0,.08],density:[.18,.38],scales:['minor','phrygian','pentatonic'],gains:[.88,.32,.22,.62,.045,.055],decays:[.42,.16,.045,.24,.15,1.05],bass:['sine','triangle'],lead:['sine','triangle']},
+ house:{tempo:[118,128],cutoff:[2200,5200],q:[.7,3],drive:[.04,.16],space:[.12,.3],swing:[.1,.23],density:[.55,.85],scales:['minor','dorian','major'],gains:[.78,.49,.3,.53,.23,.19],decays:[.3,.18,.065,.22,.26,1.15],bass:['triangle','sawtooth'],lead:['triangle','sine']},
+ dnb:{tempo:[166,178],cutoff:[1900,4400],q:[1,4],drive:[.12,.32],space:[.05,.19],swing:[0,.06],density:[.35,.65],scales:['minor','phrygian'],gains:[.82,.68,.29,.68,.16,.12],decays:[.25,.17,.043,.3,.19,.9],bass:['sine','triangle'],lead:['triangle','sawtooth']},
+ psytrance:{tempo:[140,150],cutoff:[2400,5800],q:[2,7],drive:[.08,.24],space:[.1,.25],swing:[0,.025],density:[.65,.95],scales:['phrygian','minor'],gains:[.84,.38,.26,.57,.24,.1],decays:[.27,.13,.035,.085,.15,.8],bass:['sawtooth','triangle'],lead:['sawtooth','square']},
+ breakbeat:{tempo:[128,142],cutoff:[2000,5500],q:[.8,4],drive:[.1,.3],space:[.1,.28],swing:[.06,.18],density:[.4,.75],scales:['minor','dorian','pentatonic'],gains:[.8,.6,.32,.57,.21,.13],decays:[.28,.2,.06,.2,.23,.95],bass:['triangle','sawtooth'],lead:['triangle','square']},
+ hardcore:{tempo:[170,194],cutoff:[3200,7000],q:[1,4],drive:[.5,.82],space:[.04,.16],swing:[0,.025],density:[.65,.95],scales:['minor','phrygian'],gains:[.85,.48,.25,.43,.26,.09],decays:[.42,.14,.036,.13,.19,.7],bass:['sawtooth','square'],lead:['square','sawtooth']},
+ acid:{tempo:[130,144],cutoff:[750,2900],q:[8,15],drive:[.16,.38],space:[.13,.32],swing:[0,.12],density:[.28,.6],scales:['minor','phrygian','dorian'],gains:[.79,.43,.26,.63,.14,.09],decays:[.29,.15,.045,.16,.18,.8],bass:['sawtooth','square'],lead:['sawtooth','triangle']},
+ dub:{tempo:[66,80],cutoff:[550,1850],q:[.4,2.5],drive:[.015,.1],space:[.32,.49],swing:[.06,.2],density:[.3,.65],scales:['minor','dorian','pentatonic'],gains:[.76,.44,.2,.71,.15,.24],decays:[.4,.24,.075,.4,.32,1.35],bass:['sine','triangle'],lead:['triangle','sine']}
+};
+function varyPatterns(settings,key,pick,random){
+ const set=(name,steps)=>{settings.patterns[name]=Array.from({length:16},(_,i)=>steps.includes(i));};
+ const variants={
+  dnb:[[0,6,10],[0,7,10],[0,6,11,14]],
+  breakbeat:[[0,3,8,10],[0,3,9,14],[0,6,8,11]],
+  dub:[[8],[8,14],[6,8]]
+ };
+ if(variants[key])set('kick',pick(variants[key]));
+ // The backbeat and offbeat hats remain anchors; small ghost notes add motion.
+ if(random()<.45&&key!=='dub')settings.patterns.snare[pick([3,11,15])]=true;
+ for(const step of [1,3,7,9,11,15])if(random()<(key==='hardcore'?.7:.22))settings.patterns.hat[step]=true;
+ if(key!=='psytrance'){
+  const bass=key==='dub'?[[0,6,10],[0,7,10],[2,6,12]]:key==='acid'?[[0,1,3,6,7,8,10,13,15],[0,2,3,4,7,8,11,12,14],[0,1,4,6,8,9,11,14,15]]:[[0,3,6,8,11,14],[0,3,7,10,14],[0,6,8,10,15]];
+  set('bass',pick(bass));
+ }
+ const melodies=key==='techno'?[[7],[15],[6,14],[3,11]]:key==='psytrance'||key==='hardcore'?[[0,3,6,9,12,15],[2,4,7,10,12,14],[0,2,5,8,11,14]]:[[2,7,10],[0,6,14],[3,10,15],[2,5,11,14]];
+ set('lead',pick(melodies));set('pad',pick(key==='techno'?[[0],[8],[12]]:[[0],[0,8],[4,12],[2,10]]));
+}
+/** Mutate a complete genre preset; explicit seeds are reproducible across prior states. */
+export function randomizePreset(settings,key,seed){
+ if(!Number.isInteger(seed)||seed<1||seed>2147483647)throw new RangeError('Seed must be an integer from 1 to 2147483647');
+ applyStyle(settings,key);settings.seed=seed;settings.master=clamp(settings.master??.65,0,1);
+ const random=rng(seed^0x9e3779b9);for(let i=0;i<8;i++)random();
+ const between=([low,high])=>low+(high-low)*random(),pick=values=>values[Math.floor(random()*values.length)];
+ const p=PRESET_VOICES[key],energy=random(),warmth=random(),space=between(p.space);
+ settings.bpm=Math.round(between(p.tempo));settings.root=pick([0,2,3,5,7,9,10]);settings.scale=pick(p.scales);
+ settings.swing=between(p.swing);settings.density=between(p.density);
+ settings.cutoff=Math.round(p.cutoff[0]+(p.cutoff[1]-p.cutoff[0])*warmth);
+ settings.resonance=between(p.q);settings.drive=p.drive[0]+(p.drive[1]-p.drive[0])*energy;
+ settings.delay=space;settings.reverb=space*(key==='dub'?.85:.65);
+ for(const [i,name] of CHANNELS.entries()){
+  const c=settings.channels[name];
+  c.gain=Math.min(.95,p.gains[i]*(.8+.28*energy+.12*random()));
+  c.decay=clamp(p.decays[i]*(.8+.4*random()),.03,1.8);
+  c.wave=name==='bass'?pick(p.bass):name==='lead'?pick(p.lead):name==='pad'?pick(['sine','triangle']):name==='snare'?pick(['sine','triangle']):'sine';
+ }
+ // Keep the minimal family in the background even at its brightest variation.
+ if(key==='techno')for(const name of ['lead','pad'])settings.channels[name].gain=Math.min(.09,settings.channels[name].gain);
+ varyPatterns(settings,key,pick,random);
  return settings;
 }
 export function patternEvents(settings,bar=0){
@@ -94,8 +153,8 @@ function voice(context,graph,event,time,active,tag='groove'){
  if(event.instrument!=='hat'){
   const osc=context.createOscillator();osc.type=['sine','triangle','square','sawtooth'].includes(event.wave)?event.wave:'sine';
   const freq=440*Math.pow(2,(clamp(event.note??48,0,127)-69)/12);
-  osc.frequency.setValueAtTime(event.instrument==='kick'?150:event.instrument==='snare'?180:freq,start);
-  if(event.instrument==='kick'){osc.frequency.exponentialRampToValueAtTime(43,start+.12);}
+  osc.frequency.setValueAtTime(event.instrument==='kick'?110:event.instrument==='snare'?180:freq,start);
+  if(event.instrument==='kick'){osc.frequency.exponentialRampToValueAtTime(42,start+.12);}
   if(event.instrument==='snare'){osc.frequency.exponentialRampToValueAtTime(75,end);}
   osc.connect(filter);sources.push(osc);
  }

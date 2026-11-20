@@ -10,11 +10,17 @@ An on-device electronic music instrument: generative groovebox, two local remix 
 
 ## Workspaces
 
+### New in 1.1
+
+Every visit starts a fresh genre-aware sound: tempo, groove, timbres, voice levels, decay and effects vary together within the selected style. Techno starts dark and minimal, with a rounded deep kick, low bass and restrained melody. Select another genre or press Variation to explore another complete sound. **Settings → Fresh sound on each visit** can be turned off to keep an exact sound across reloads. Export JSON before exploring if you want to keep a snapshot; imported projects apply exactly to the current visit.
+
+A skippable first-run guide and a replayable mixer walkthrough explain the six voices, melody, timbre/decay, mute/solo, filter/resonance, drive, delay, reverb and master level. Audio starts only after a playback action.
+
 **Groovebox:** techno, house, drum & bass, psytrance, breakbeat, hardcore, acid and dub recipes; six editable 16-step lanes; seeded musical variation; tempo, key, scale, swing, activity; channel level/mute/solo; synthesizer waveform and decay; filter, resonance, drive, delay and reverb; master level and session timer.
 
 **Remix:** open two tracks from your device. Files are decoded and processed in memory, never uploaded. Waveforms, deck transport, loop boundaries, playback rate, reverse, three-band EQ, filtering and crossfade support manual mixing over synthesized music. This is sample/deck remixing, not AI stem separation, automatic beat detection or pitch-preserving time stretching. Rate changes alter pitch. Browser audio codec support varies; WAV is the most portable interchange format. Large decoded tracks may exceed phone memory.
 
-**Live code:** a safe, bounded parser for a **Sonic Pi-compatible subset**, rendered by Boombox's own Web Audio instruments. Supports a documented selection of `use_bpm`, `use_synth`, `live_loop`, `play`, `sample`, `sleep` and bounded repetitions. Unsupported Ruby produces an error rather than executing arbitrary JavaScript. Export `.rb` to continue in desktop [Sonic Pi](https://sonic-pi.net/). **The actual Sonic Pi Ruby/SuperCollider runtime is not bundled.** Effects, instruments, samples and exact sonic output differ from desktop Sonic Pi. No Sonic Pi samples or runtime code are redistributed.
+**Live code:** write musical loops using `use_bpm`, `use_synth`, `live_loop`, `play`, `sample`, `sleep` and bounded repetitions. Boombox renders them through its own Web Audio instruments. Start with the included examples, consult the command reference and export your performance as `.rb`.
 
 Project JSON saves settings, sequence and code, **not imported audio**; reopen source tracks after restoring. Settings use local browser storage. Browser storage is origin-scoped: data does not automatically transfer between the web app, another browser and the APK.
 
@@ -37,6 +43,8 @@ python -m http.server 8097 --directory web
 npm test
 python tests/browser_test.py
 python tests/ui_test.py
+python tests/onboarding_test.py
+python tests/preset_audio_test.py
 ```
 
 Tests use Node's built-in test runner; browser tests require Python Playwright and Chromium. Browser tests render real offline WAV, measure live audio, exercise offline reload and cache repair, and check document width at mobile sizes.
