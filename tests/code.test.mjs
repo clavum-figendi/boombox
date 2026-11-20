@@ -31,7 +31,11 @@ test('missing ends retain syntax diagnostics without Array.at (Chromium 90)',()=
 test('envelope options are order independent',()=>{
  const a=compile('play 60, release: 0.2, sustain: 1, attack: 0.1\nsleep 2').loops[0].events[0];
  const b=compile('play 60, attack: 0.1, sustain: 1, release: 0.2\nsleep 2').loops[0].events[0];
- assert.equal(a.duration,b.duration);assert(Math.abs(a.duration-1.3)<1e-9);
+ assert.equal(a.duration,b.duration);assert(Math.abs(a.duration-1.3*60/132)<1e-9);
+ assert(Math.abs(a.attack-.1*60/132)<1e-9);assert(Math.abs(a.sustain-60/132)<1e-9);
+ const slow=compile('use_bpm 60\nplay 60, attack: 1, sustain: 2, release: 3\nsleep 1').loops[0].events[0];
+ const fast=compile('use_bpm 120\nplay 60, attack: 1, sustain: 2, release: 3\nsleep 1').loops[0].events[0];
+ assert.equal(slow.duration,6);assert.equal(fast.duration,3);assert.equal(fast.attack,.5);assert.equal(fast.sustain,1);assert.equal(fast.release,1.5);
 });
 
 test('sample mappings, flats and sharp notes preserve timing',()=>{

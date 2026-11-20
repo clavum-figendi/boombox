@@ -22,7 +22,7 @@ const RHYTHMS={
  dub:['8','8','2,6,10,14','0,6,10','6,14','4,12']
 };
 export function defaultSettings(){
- const channels=Object.fromEntries(CHANNELS.map((name,i)=>[name,{gain:[.8,.55,.32,.55,.3,.2][i],mute:false,solo:false,wave:i<3?'sine':i===5?'triangle':'sawtooth',decay:[.3,.18,.055,.18,.22,1.1][i]}]));
+ const channels=Object.fromEntries(CHANNELS.map((name,i)=>[name,{gain:[.8,.55,.32,.55,.3,.2][i],mute:false,solo:false,wave:i===1?'triangle':i<3?'sine':i===5?'triangle':'sawtooth',decay:[.3,.18,.055,.18,.22,1.1][i]}]));
  const settings={style:'techno',bpm:132,seed:42,root:0,scale:'minor',swing:0,density:.65,master:.65,cutoff:3000,resonance:3,drive:.2,delay:.2,reverb:.15,channels,patterns:{}};
  applyStyle(settings,'techno');return settings;
 }
@@ -43,7 +43,7 @@ export function patternEvents(settings,bar=0){
   if(['lead','pad'].includes(instrument)&&chance>clamp(settings.density,0,1))continue;
   const index=(degree+(instrument==='lead'?Math.floor(random()*scale.length):step%3===0?0:2))%scale.length;
   const note=(instrument==='bass'?36:instrument==='pad'?48:60)+Number(settings.root||0)+scale[index];
-  events.push({instrument,step,beat:step/4+(step%2?clamp(settings.swing,0,.45)/4:0),note,amp:instrument==='hat'?.4+chance*.25:.65+chance*.2,duration:instrument==='pad'?1.4:settings.channels[instrument].decay,wave:settings.channels[instrument].wave});
+  events.push({instrument,step,beat:step/4+(step%2?clamp(settings.swing,0,.45)/4:0),note,amp:instrument==='hat'?.4+chance*.25:.65+chance*.2,duration:settings.channels[instrument].decay,wave:settings.channels[instrument].wave});
  }
  return events.sort((a,b)=>a.beat-b.beat);
 }
@@ -76,11 +76,13 @@ function updateGraph(context,g,s,initial=false){
 }
 function voice(context,graph,event,time,active,tag='groove'){
  if(!CHANNELS.includes(event.instrument))throw new RangeError('Unknown instrument');
- const start=Math.max(context.currentTime,time), duration=clamp(event.duration??.2,.02,8), end=start+duration+.03;
+ const start=Math.max(context.currentTime,time), duration=clamp(event.duration??.2,.01,96), end=start+duration;
  // Count overlapping voices, not all future offline-render events.
  let overlapping=0;for(const entry of active)if(entry.end>start&&++overlapping>=128)return;
  const amp=context.createGain(),filter=context.createBiquadFilter();
- amp.gain.setValueAtTime(0,start);amp.gain.linearRampToValueAtTime(clamp(event.amp??.5,0,1)*.42,start+.004);amp.gain.exponentialRampToValueAtTime(.0001,end);
+ const level=clamp(event.amp??.5,0,2)*.42,attack=clamp(event.attack??.004,.001,duration),hold=Math.min(end,start+attack+clamp(event.sustain??0,0,duration));
+ amp.gain.setValueAtTime(0,start);
+ if(level>0){amp.gain.linearRampToValueAtTime(level,start+attack);amp.gain.setValueAtTime(level,hold);if(hold<end)amp.gain.exponentialRampToValueAtTime(.00001,end);amp.gain.setValueAtTime(0,end);}
  filter.type='lowpass';filter.frequency.value=event.instrument==='bass'?1800:12000;
  filter.connect(amp);amp.connect(graph.channels[event.instrument]);
  const sources=[];
@@ -93,8 +95,8 @@ function voice(context,graph,event,time,active,tag='groove'){
   const osc=context.createOscillator();osc.type=['sine','triangle','square','sawtooth'].includes(event.wave)?event.wave:'sine';
   const freq=440*Math.pow(2,(clamp(event.note??48,0,127)-69)/12);
   osc.frequency.setValueAtTime(event.instrument==='kick'?150:event.instrument==='snare'?180:freq,start);
-  if(event.instrument==='kick'){osc.type='sine';osc.frequency.exponentialRampToValueAtTime(43,start+.12);}
-  if(event.instrument==='snare'){osc.type='triangle';osc.frequency.exponentialRampToValueAtTime(75,end);}
+  if(event.instrument==='kick'){osc.frequency.exponentialRampToValueAtTime(43,start+.12);}
+  if(event.instrument==='snare'){osc.frequency.exponentialRampToValueAtTime(75,end);}
   osc.connect(filter);sources.push(osc);
  }
  const entry={sources,amp,filter,tag,end};active.add(entry);let remaining=sources.length;
@@ -102,14 +104,14 @@ function voice(context,graph,event,time,active,tag='groove'){
 }
 function kill(active,tag){for(const entry of active)if(!tag||entry.tag===tag){for(const source of entry.sources){try{source.stop();}catch{}source.disconnect();}entry.amp.disconnect();entry.filter.disconnect();active.delete(entry);}}
 export class Engine {
- constructor(settings=defaultSettings()) {this.settings=settings;this.context=null;this.graph=null;this.active=new Set();this._playing=false;this._step=0;this.nextStep=0;this.tickIndex=0;this.timer=null;this.codeTimer=null;this.code=null;this.decks=[{playing:false,gain:.8,rate:1,low:0,mid:0,high:0,cutoff:20000,start:0,end:1,reverse:false},{playing:false,gain:.8,rate:1,low:0,mid:0,high:0,cutoff:20000,start:0,end:1,reverse:false}];this.fade=0;}
+ constructor(settings=defaultSettings()) {this.settings=settings;this.context=null;this.graph=null;this.active=new Set();this._playing=false;this._step=0;this.stepTimeline=[];this.nextStep=0;this.tickIndex=0;this.timer=null;this.codeTimer=null;this.code=null;this.decks=[{playing:false,gain:.8,rate:1,low:0,mid:0,high:0,cutoff:20000,start:0,end:1,reverse:false},{playing:false,gain:.8,rate:1,low:0,mid:0,high:0,cutoff:20000,start:0,end:1,reverse:false}];this.fade=0;}
  get playing(){return this._playing;}
- get step(){if(this._playing&&this.context)return Math.max(0,Math.floor((this.context.currentTime-this.origin)/(60/clamp(this.settings.bpm,30,300)/4)))%16;return this._step;}
+ get step(){if(this._playing&&this.context)while(this.stepTimeline.length&&this.stepTimeline[0].time<=this.context.currentTime)this._step=this.stepTimeline.shift().step;return this._step;}
  get analyser(){return this.graph?.analyser||null;}
  async init(){if(!this.context){const Context=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Context)throw new Error('Web Audio is not available in this browser');this.context=new Context();this.graph=connectGraph(this.context,this.settings,this.context.destination);}if(this.context.state==='suspended')await this.context.resume();return this;}
- async play(){await this.init();if(this._playing)return;this._playing=true;this.nextStep=this.context.currentTime+.04;this.origin=this.nextStep-this.tickIndex*60/clamp(this.settings.bpm,30,300)/4;this._schedule();this.timer=setInterval(()=>this._schedule(),25);}
- _schedule(){const beat=60/clamp(this.settings.bpm,30,300);while(this.nextStep<this.context.currentTime+.12){const step=this.tickIndex%16,bar=Math.floor(this.tickIndex/16);for(const event of patternEvents(this.settings,bar).filter(e=>e.step===step))voice(this.context,this.graph,event,this.nextStep+(event.beat-step/4)*beat,this.active);this._step=step;this.tickIndex++;this.nextStep+=beat/4;}}
- pause(){this._playing=false;clearInterval(this.timer);this.timer=null;kill(this.active,'groove');}
+ async play(){await this.init();if(this._playing)return;this._playing=true;this.nextStep=this.context.currentTime+.04;this.stepTimeline=[];this._schedule();this.timer=setInterval(()=>this._schedule(),25);}
+ _schedule(){this._step=this.step;const beat=60/clamp(this.settings.bpm,30,300);while(this.nextStep<this.context.currentTime+.12){const step=this.tickIndex%16,bar=Math.floor(this.tickIndex/16);for(const event of patternEvents(this.settings,bar).filter(e=>e.step===step))voice(this.context,this.graph,event,this.nextStep+(event.beat-step/4)*beat,this.active);this.stepTimeline.push({step,index:this.tickIndex,time:this.nextStep});this.tickIndex++;this.nextStep+=beat/4;}}
+ pause(){this._step=this.step;if(this.stepTimeline.length)this.tickIndex=this.stepTimeline[0].index;this.stepTimeline=[];this._playing=false;clearInterval(this.timer);this.timer=null;kill(this.active,'groove');}
  stop(){this.pause();this.tickIndex=0;this._step=0;this.stopCode();for(let i=0;i<2;i++)this.deck(i,{playing:false});}
  update(settings){this.settings=settings;if(this.graph)updateGraph(this.context,this.graph,settings);}
  trigger(event,time){if(!this.context)throw new Error('Initialize audio first');voice(this.context,this.graph,event,time??this.context.currentTime,this.active,'code');}

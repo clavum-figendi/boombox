@@ -3,7 +3,7 @@ import json
 import os
 import pathlib
 import wave
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 
 URL = os.environ.get('BOOMBOX_URL', 'http://127.0.0.1:8097/')
 OUT = pathlib.Path(__file__).resolve().parent.parent / 'artifacts'
@@ -44,6 +44,7 @@ with sync_playwright() as p:
     for width in [320,390,768]:
         page.set_viewport_size({'width':width,'height':844})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'Overflow at {width}'
+    page.set_viewport_size({'width':390,'height':844})
     page.screenshot(path=str(OUT/'boombox-mobile.png'), full_page=True)
     page.evaluate('navigator.serviceWorker.ready.then(()=>true)')
     page.reload()
@@ -66,4 +67,17 @@ with sync_playwright() as p:
     result.update(signal=signal,offline=True,mobileOverflow=False,errors=errors)
     (OUT/'browser-verification.json').write_text(json.dumps(result,indent=2))
     print(json.dumps(result,indent=2))
+    # A failed first install must produce a bounded error and be repairable.
+    interrupted = browser.new_context()
+    interrupted.route('**/LICENSE.txt', lambda route: route.abort())
+    failed = interrupted.new_page()
+    failed.goto(URL)
+    failed.wait_for_function("document.documentElement.dataset.ready === 'true'")
+    expect(failed.locator('#offlineStatus')).to_contain_text('did not finish', timeout=20000)
+    interrupted.unroute('**/LICENSE.txt')
+    failed.locator('[data-open="settingsSheet"]').click()
+    failed.locator('#saveOffline').click()
+    expect(failed.locator('#offlineStatus')).to_contain_text('Ready offline', timeout=20000)
+    interrupted.close()
+    print('Interrupted first cache installation and retry: PASS')
     browser.close()

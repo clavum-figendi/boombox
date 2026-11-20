@@ -18,6 +18,8 @@ An on-device electronic music instrument: generative groovebox, two local remix 
 
 Project JSON saves settings, sequence and code, **not imported audio**; reopen source tracks after restoring. Settings use local browser storage. Browser storage is origin-scoped: data does not automatically transfer between the web app, another browser and the APK.
 
+Code has one global tempo: the final `use_bpm` governs all code loops, independently of the groovebox tempo. Sleep and attack/sustain/release parameters are in beats. General Ruby, variables, user-defined functions and `with_fx` are not implemented. Hats are synthesized noise; their decay is adjustable, but they do not offer an oscillator waveform selector.
+
 ## Offline and Android boundaries
 
 Web: open online once and use Save offline; wait for successful cache verification. Later reloads and generation work disconnected. Browser storage eviction or clearing site data removes the cache. Android bundles the entire app and requires no network permission, so no first-run asset download is needed.
@@ -34,9 +36,12 @@ No runtime dependencies or CDN assets. Serve `web/` with any static server, unde
 python -m http.server 8097 --directory web
 npm test
 python tests/browser_test.py
+python tests/ui_test.py
 ```
 
 Tests use Node's built-in test runner; browser tests require Python Playwright and Chromium. Browser tests render real offline WAV, measure live audio, exercise offline reload and cache repair, and check document width at mobile sizes.
+
+Install the browser test dependencies with `python -m pip install playwright` and `python -m playwright install chromium`. Optionally set `CHROMIUM_EXECUTABLE` to an existing Chromium executable. Run `BOOMBOX_AUDIO_TEST_URL=http://127.0.0.1:8097/ npm test` to include real PCM timbre/envelope/effect/silence regressions; without that variable the browser-dependent Node test is explicitly skipped.
 
 Android build (Java 17, SDK 35):
 

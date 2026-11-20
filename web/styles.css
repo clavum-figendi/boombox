@@ -10,3 +10,4 @@ html[data-theme=light]{color-scheme:light;--bg:#eeeadd;--surface:#f8f5eb;--raise
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 @media(max-width:360px){.transport-controls .play{min-width:82px}.transport-controls{gap:5px}#timerButton{width:44px;min-width:44px}#timerButton span{display:none}.master input{width:65px}.top-actions button{padding-inline:8px}.brand{font-size:23px}.genre small{display:none}.stage-title h1{font-size:50px}}
 @supports not (height:1dvh){.sheet{max-height:85vh}}
+@media(max-width:600px){.sequencer{min-width:871px;grid-template-columns:77px repeat(16,44px)}}

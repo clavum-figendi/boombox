@@ -10,6 +10,11 @@ const SCALES = ['minor','major','dorian','phrygian','pentatonic'];
 const WAVES = ['sine','triangle','sawtooth','square'];
 const clamp = (n,min,max) => Math.min(max,Math.max(min,n));
 let settings = defaultSettings();
+let code = Object.values(EXAMPLES)[0] || '';
+function safeCode(value) {
+  if (typeof value !== 'string' || value.length > 64000) throw new Error('Invalid project code: expected a string of at most 64000 characters.');
+  return value;
+}
 let look = { theme:'amber', textSize:'normal', motion:true };
 let elapsed = 0, timer = 0, lastTick = performance.now(), recording = false, registration;
 let raf = 0, lastStep = -1, started = false;
@@ -42,7 +47,15 @@ function safeSettings(input) {
   return result;
 }
 try {
-  const saved = localStorage.getItem(STORE); if(saved) settings = safeSettings(JSON.parse(saved));
+  const saved = localStorage.getItem(STORE);
+  if(saved) {
+    const parsed = JSON.parse(saved);
+    if(parsed?.version === 1 && parsed.settings) {
+      const restored = safeSettings(parsed.settings);
+      const restoredCode = Object.prototype.hasOwnProperty.call(parsed,'code') ? safeCode(parsed.code) : code;
+      settings = restored; code = restoredCode;
+    } else settings = safeSettings(parsed);
+  }
   const savedLook = JSON.parse(localStorage.getItem(LOOK) || 'null');
   if(savedLook) {
     if(['amber','mint','light','system'].includes(savedLook.theme)) look.theme=savedLook.theme;
@@ -53,7 +66,7 @@ try {
 const engine = new Engine(settings);
 window.boombox = { engine, get settings() { return settings; } };
 function persist() {
-  try { localStorage.setItem(STORE,JSON.stringify(settings)); }
+  try { localStorage.setItem(STORE,JSON.stringify({version:1,settings,code})); }
   catch { announce('Changes work for this visit, but browser storage is unavailable. Export JSON for a backup.'); }
 }
 function updateSound() { engine.update(settings); persist(); syncReadouts(); drawScore(); }
@@ -99,7 +112,9 @@ function renderMixer() {
     strip.append(switches,rangeControl(`${lane} gain`,ch.gain,0,1,.01,value=>{ch.gain=value;updateSound();}));
     const label=make('label','control','Wave'), select=make('select');select.setAttribute('aria-label',`${lane} waveform`);
     WAVES.forEach(w=>{const o=make('option','',w.replace('sawtooth','saw'));o.value=w;select.append(o);});select.value=ch.wave;select.addEventListener('change',()=>{ch.wave=select.value;updateSound();});label.append(select);
-    strip.append(label,rangeControl(`${lane} decay`,ch.decay,.03,4,.01,value=>{ch.decay=value;updateSound();},n=>`${n.toFixed(2)}s`));$('#mixer').append(strip);
+    if(lane!=='hat')strip.append(label);
+    else strip.append(make('p','fine','Noise percussion'));
+    strip.append(rangeControl(`${lane} decay`,ch.decay,.03,4,.01,value=>{ch.decay=value;updateSound();},n=>`${n.toFixed(2)}s`));$('#mixer').append(strip);
   });
   $('#effects').replaceChildren();
   const fx=[['cutoff','Cutoff',40,20000,10,n=>`${Math.round(n)} Hz`],['resonance','Resonance',0,18,.1,n=>n.toFixed(1)],['drive','Drive',0,1,.01],['reverb','Reverb',0,1,.01],['delay','Delay',0,.8,.01]];
@@ -135,6 +150,14 @@ $$('dialog').forEach(dialog=>{
   dialog.querySelector('[data-close]').addEventListener('click',()=>dialog.close());
   dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
   dialog.addEventListener('close',()=>opener?.focus());
+  dialog.addEventListener('keydown',e=>{
+    if(e.key!=='Tab')return;
+    const controls=[...dialog.querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].filter(el=>!el.disabled&&el.tabIndex>=0&&el.getClientRects().length);
+    const first=controls[0],last=controls.at(-1);
+    if(!first)return;
+    if(e.shiftKey&&(document.activeElement===first||document.activeElement===dialog)){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
 });
 $('#theme').addEventListener('change',e=>{look.theme=e.target.value;saveLook();});
 $('#textSize').addEventListener('change',e=>{look.textSize=e.target.value;saveLook();});
@@ -213,8 +236,11 @@ function drawWave(index) {
 buildDeck(0);buildDeck(1);
 $('#crossfader').addEventListener('input',guarded(e=>engine.crossfade(Number(e.target.value))));
 for(const name of Object.keys(EXAMPLES)){const o=make('option','',name);o.value=name;$('#codeExample').append(o);}
-$('#codeEditor').value=Object.values(EXAMPLES)[0]||'';
-$('#codeExample').addEventListener('change',e=>{$('#codeEditor').value=EXAMPLES[e.target.value];announce('Example loaded. Run it to hear the changes.','#codeStatus');});
+$('#codeEditor').value=code;
+$('#codeEditor').maxLength=64000;
+$('#codeHint').append(make('p','','One global code tempo: the final use_bpm applies to every code loop. Sleep and attack/sustain/release values are in beats. This tempo is independent of the groovebox. Synths: sine, saw, square, tri, bass, prophet, beep. Samples: bd_haus, bd_tek, sn_dub, drum_snare_hard, drum_cymbal_closed, drum_cymbal_open. Repeat with 4.times do … end; general Ruby, variables, functions and with_fx are not supported.'));
+$('#codeEditor').addEventListener('input',()=>{code=$('#codeEditor').value;persist();});
+$('#codeExample').addEventListener('change',e=>{code=EXAMPLES[e.target.value];$('#codeEditor').value=code;persist();announce('Example loaded. Run it to hear the changes.','#codeStatus');});
 $('#runCode').addEventListener('click',guarded(async()=>{const program=compile($('#codeEditor').value);await initAudio();await engine.runCode(program);announce('Code running locally. Stop code silences this part only.','#codeStatus');},'#codeStatus'));
 $('#stopCode').addEventListener('click',guarded(()=>{engine.stopCode();announce('Code stopped.','#codeStatus');},'#codeStatus'));
 async function download(blob,name) {
@@ -225,10 +251,10 @@ async function download(blob,name) {
   const url=URL.createObjectURL(blob),a=make('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 $('#exportCode').addEventListener('click',guarded(()=>download(new Blob([$('#codeEditor').value],{type:'text/plain'}),'boombox-live.rb'),'#codeStatus'));
-$('#exportProject').addEventListener('click',guarded(async()=>{await download(new Blob([JSON.stringify({version:1,settings},null,2)],{type:'application/json'}),'boombox-project.json');announce('Project export opened. Choose a location to save.','#settingsStatus');},'#settingsStatus'));
+$('#exportProject').addEventListener('click',guarded(async()=>{await download(new Blob([JSON.stringify({version:1,settings,code},null,2)],{type:'application/json'}),'boombox-project.json');announce('Project export opened. Choose a location to save.','#settingsStatus');},'#settingsStatus'));
 $('#importProject').addEventListener('change',guarded(async e=>{
   const file=e.target.files[0];if(!file)return;
-  try {if(file.size>256000)throw new Error('Project JSON must be smaller than 256 KB.');const parsed=JSON.parse(await file.text());if(parsed.version!==1||!parsed.settings)throw new Error('Unsupported project. Expected Boombox project version 1.');const imported=safeSettings(parsed.settings);stopAll();settings=imported;updateSound();renderSettings();announce('Project imported. Audio files are not part of JSON projects.','#settingsStatus');}finally{e.target.value='';}
+  try {if(file.size>256000)throw new Error('Project JSON must be smaller than 256 KB.');const parsed=JSON.parse(await file.text());if(parsed.version!==1||!parsed.settings)throw new Error('Unsupported project. Expected Boombox project version 1.');const imported=safeSettings(parsed.settings);const importedCode=Object.prototype.hasOwnProperty.call(parsed,'code')?safeCode(parsed.code):code;stopAll();settings=imported;code=importedCode;$('#codeEditor').value=code;updateSound();renderSettings();announce('Project imported. Audio files are not part of JSON projects.','#settingsStatus');}finally{e.target.value='';}
 },'#settingsStatus'));
 $('#exportWav').addEventListener('click',guarded(async()=>{const button=$('#exportWav');button.disabled=true;announce('Rendering the groovebox…','#exportStatus');try{await initAudio();const seconds=Number($('#exportLength').value),blob=await engine.exportWav(seconds);await download(blob,`boombox-${seconds}s.wav`);announce('WAV export opened. Choose a location to save.','#exportStatus');}finally{button.disabled=false;}},'#exportStatus'));
 if(typeof engine.startRecording==='function'&&typeof engine.stopRecording==='function') {
@@ -237,13 +263,21 @@ if(typeof engine.startRecording==='function'&&typeof engine.stopRecording==='fun
 $('#resetProject').addEventListener('click',()=>{if(!confirm('Reset sound and pattern? Your appearance preferences will stay.'))return;stopAll();settings=defaultSettings();updateSound();renderSettings();announce('Sound reset.','#settingsStatus');});
 async function offlineRequest(type) {
   if(!('serviceWorker' in navigator))throw new Error('Offline caching requires a supported browser and HTTPS or localhost.');
-  registration=registration||await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;
+  let deadline;
+  try {
+    registration=await Promise.race([
+      (async()=>{const r=await navigator.serviceWorker.register('./sw.js');await navigator.serviceWorker.ready;return r;})(),
+      new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error('Offline installation did not finish. Check your connection, then Save offline to retry.')),10000);})
+    ]);
+  } finally {clearTimeout(deadline);}
   const worker=registration.active||navigator.serviceWorker.controller;if(!worker)throw new Error('Offline worker is installing. Try again in a moment.');
   return new Promise((resolve,reject)=>{const channel=new MessageChannel(),timeout=setTimeout(()=>{channel.port1.close();reject(new Error('Offline check timed out. Reload and try again.'));},20000);channel.port1.onmessage=e=>{clearTimeout(timeout);channel.port1.close();resolve(e.data);};worker.postMessage({type},[channel.port2]);});
 }
 function showOffline(result) { if(result.error)throw new Error(result.error);$('#offlineStatus').textContent=result.ready?`Ready offline · ${result.total} assets`:`Not ready · ${Array.isArray(result.missing)?result.missing.length:result.missing} missing of ${result.total}`; }
 $('#saveOffline').addEventListener('click',guarded(async()=>{const b=$('#saveOffline');b.disabled=true;$('#offlineStatus').textContent='Saving local assets…';try{showOffline(await offlineRequest('SAVE_OFFLINE'));}finally{b.disabled=false;}},'#offlineStatus'));
-if('serviceWorker' in navigator)offlineRequest('CHECK_OFFLINE').then(showOffline).catch(error=>{$('#offlineStatus').textContent=errorMessage(error);});
+if(window.BoomboxAndroid&&location.origin==='https://boombox.local') {
+  $('#offlineStatus').textContent='Bundled offline · no download needed';$('#saveOffline').disabled=true;
+} else if('serviceWorker' in navigator)offlineRequest('CHECK_OFFLINE').then(showOffline).catch(error=>{$('#offlineStatus').textContent=errorMessage(error);});
 // Keep the focused control clear of the fixed transport without scrolling the whole page sideways.
 document.addEventListener('focusin',e=>{if(e.target.closest('dialog,.transport')||!e.target.getBoundingClientRect)return;requestAnimationFrame(()=>{const bottom=e.target.getBoundingClientRect().bottom,top=$('.transport').getBoundingClientRect().top;if(bottom>top-12)window.scrollBy(0,bottom-top+20);});});
 renderSettings();saveLook();syncPlay();decks.forEach((d,i)=>drawWave(i));

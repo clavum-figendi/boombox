@@ -57,7 +57,7 @@ export function compile(source) {
             const value=number(opt[2],line,0,opt[1]==='amp'?2:16);
             if(opt[1]==='amp') event.amp=value; else envelope[opt[1]]=value;
           }
-          event.duration=Math.max(.01,envelope.attack+envelope.sustain+envelope.release);
+          Object.assign(event,envelope);
         }
         if(++expanded>4096) fail(line,'Too many events'); events.push(event); continue;
       }
@@ -69,6 +69,14 @@ export function compile(source) {
   const top=block();
   if(top.events.length) { if(!top.beats) fail(1,'Events need sleep'); loops.unshift({name:'main',...top}); }
   if(!loops.length) fail(1,'Add a live_loop with notes or samples');
+  // This subset has one global BPM; envelopes use beats like sleep, then
+  // become seconds at the compiler/engine boundary.
+  for(const loop of loops) for(const event of loop.events) {
+    event.attack=(event.attack??0)*60/bpm;
+    event.sustain=(event.sustain??0)*60/bpm;
+    event.release=(event.release??.25)*60/bpm;
+    event.duration=Math.max(.01,event.attack+event.sustain+event.release);
+  }
   return {bpm,loops};
 }
 export const EXAMPLES = {
