@@ -12,6 +12,6 @@ adb shell dumpsys connectivity > android/connectivity.log
 if grep -Eq 'Active default network: [0-9]' android/connectivity.log; then
   printf 'Unexpected active default network\n'; exit 1
 fi
-timeout 120s adb shell am instrument -w app.boombox.local.test/app.boombox.local.OfflineTest | tee android/offline-test.log
+timeout 120s adb shell am instrument -w -r app.boombox.local.test/app.boombox.local.OfflineTest | tee android/offline-test.log
 grep -q BOOMBOX_OFFLINE_AUDIO_PASS android/offline-test.log
 grep -q 'INSTRUMENTATION_CODE: -1' android/offline-test.log
