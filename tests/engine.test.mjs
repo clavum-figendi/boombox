@@ -62,6 +62,24 @@ test('playhead follows scheduled playback across tempo changes, not lookahead',(
  engine.pause();
 });
 
+test('groove scheduler skips missed beats after a long throttled-tab gap',()=>{
+ const settings=defaultSettings();settings.bpm=120;for(const p of Object.values(settings.patterns))p.fill(false);
+ const engine=new Engine(settings);engine.context={currentTime:600};engine._playing=true;
+ engine.nextStep=0;engine._schedule();
+ assert(engine.stepTimeline.length<=2,'missed beats must not be scheduled in a burst');
+ assert(engine.stepTimeline.every(e=>e.time>=600));
+ assert(engine.tickIndex>=4800);engine.pause();
+});
+
+test('code scheduler skips missed cycles instead of replaying stale notes',()=>{
+ const engine=new Engine(defaultSettings()),triggered=[];engine.context={currentTime:600};
+ const loop={beats:1,events:[{beat:0,instrument:'kick'}]};
+ engine.code={compiled:{bpm:120},loops:[{loop,cycle:0,index:0}],start:0};
+ engine.trigger=(event,time)=>triggered.push(time);engine._scheduleCode();
+ assert(triggered.length<=1,'missed code cycles must not burst');
+ assert(triggered.every(time=>time>=599.95));engine.stopCode();
+});
+
 test('invalid audio files and compiled programs fail before allocating an AudioContext',async()=>{
  const engine=new Engine(defaultSettings());
  await assert.rejects(engine.loadTrack(2,{size:100}),/Deck index/);

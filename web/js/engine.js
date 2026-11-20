@@ -1,4 +1,42 @@
 const CHANNELS=['kick','snare','hat','bass','lead','pad'];
+export const SCALES={
+ minor:{name:'Natural minor',intervals:[0,2,3,5,7,8,10]},major:{name:'Major',intervals:[0,2,4,5,7,9,11]},
+ dorian:{name:'Dorian',intervals:[0,2,3,5,7,9,10]},phrygian:{name:'Phrygian',intervals:[0,1,3,5,7,8,10]},
+ pentatonic:{name:'Minor pentatonic (legacy)',intervals:[0,3,5,7,10]},minor_pentatonic:{name:'Minor pentatonic',intervals:[0,3,5,7,10]},
+ lydian:{name:'Lydian',intervals:[0,2,4,6,7,9,11]},mixolydian:{name:'Mixolydian',intervals:[0,2,4,5,7,9,10]},locrian:{name:'Locrian',intervals:[0,1,3,5,6,8,10]},
+ harmonic_minor:{name:'Harmonic minor',intervals:[0,2,3,5,7,8,11]},melodic_minor:{name:'Melodic minor (ascending)',intervals:[0,2,3,5,7,9,11]},
+ major_pentatonic:{name:'Major pentatonic',intervals:[0,2,4,7,9]},blues:{name:'Minor blues',intervals:[0,3,5,6,7,10]},whole_tone:{name:'Whole tone',intervals:[0,2,4,6,8,10]},
+ diminished:{name:'Diminished (whole–half)',intervals:[0,2,3,5,6,8,9,11]},hungarian_minor:{name:'Hungarian minor',intervals:[0,2,3,6,7,8,11]},phrygian_dominant:{name:'Phrygian dominant',intervals:[0,1,4,5,7,8,10]}
+};
+// Wave changes carrier shape where exposed; fixed metallic/FM/drum circuits hide it.
+export const INSTRUMENTS={
+ classic:{name:'Classic',lanes:CHANNELS.slice(),description:'Original lane synthesis; waveform changes the tonal oscillator.'},
+ sub:{name:'Sub',lanes:['bass','lead'],description:'Rounded carrier with a quiet octave below; wave selects carrier shape.'},
+ reese:{name:'Reese',lanes:['bass','lead'],description:'Detuned twin carriers and a low sub; wave selects the twin oscillators.'},
+ acid:{name:'Acid',lanes:['bass','lead'],description:'Resonant descending low-pass envelope; wave selects its carrier.'},
+ fm_bell:{name:'FM bell',lanes:['bass','lead','pad'],description:'Inharmonic sine FM with a decaying modulation index.',wave:false},
+ pluck:{name:'Pluck',lanes:['bass','lead','pad'],description:'Fast falling brightness envelope; wave selects the plucked carrier.'},
+ supersaw:{name:'Supersaw',lanes:['bass','lead','pad'],description:'Seven detuned carriers; wave selects the oscillator bank shape.'},
+ organ:{name:'Organ',lanes:['bass','lead','pad'],description:'Sine drawbars at fundamental, octave and fifth.',wave:false},
+ glass_pad:{name:'Glass pad',lanes:['lead','pad'],description:'Slow blooming, detuned glassy FM pair.',wave:false},
+ kick_808:{name:'808 kick',lanes:['kick'],description:'Deep sine pitch-drop with a soft click.',wave:false},
+ kick_909:{name:'909 kick',lanes:['kick'],description:'Punchy triangle pitch-drop and short noise attack.',wave:false},
+ kick_industrial:{name:'Industrial kick',lanes:['kick'],description:'Saturated dual oscillator with a metallic attack.',wave:false},
+ snare:{name:'Machine snare',lanes:['snare'],description:'Dual body oscillators and band-limited noise.',wave:false},
+ clap:{name:'Clap',lanes:['snare'],description:'Three gated noise bursts followed by a diffuse tail.',wave:false},
+ rim:{name:'Rim',lanes:['snare'],description:'Short resonant, non-harmonic wood-and-metal tones.',wave:false},
+ hat_closed:{name:'Closed hat',lanes:['hat'],description:'Short filtered noise with six metallic square oscillators.',wave:false},
+ hat_open:{name:'Open hat',lanes:['hat'],description:'Longer sizzling noise and a bright inharmonic oscillator pair.',wave:false},
+ hat_metallic:{name:'Metallic hat',lanes:['hat'],description:'Six inharmonic square oscillators, no noise.',wave:false}
+};
+/** Missing, unknown and wrong-lane patch IDs always retain legacy synthesis. */
+export function instrumentFor(lane,id){return Object.prototype.hasOwnProperty.call(INSTRUMENTS,id)&&INSTRUMENTS[id].lanes.includes(lane)?id:'classic';}
+const STYLE_INSTRUMENTS={
+ techno:['kick_808','rim','hat_closed','sub','pluck','glass_pad'],house:['kick_909','clap','hat_open','sub','organ','organ'],
+ dnb:['kick_909','snare','hat_closed','reese','fm_bell','glass_pad'],psytrance:['kick_909','clap','hat_closed','acid','supersaw','glass_pad'],
+ breakbeat:['kick_909','snare','hat_open','reese','pluck','glass_pad'],hardcore:['kick_industrial','snare','hat_metallic','reese','supersaw','glass_pad'],
+ acid:['kick_808','clap','hat_closed','acid','pluck','glass_pad'],dub:['kick_808','rim','hat_open','sub','organ','glass_pad']
+};
 const clamp=(n,min,max)=>Math.max(min,Math.min(max,Number.isFinite(Number(n))?Number(n):min));
 const rng=seed=>()=>{seed=(Math.imul(1664525,seed)+1013904223)>>>0;return seed/4294967296;};
 export const STYLES={
@@ -22,7 +60,9 @@ const RHYTHMS={
  dub:['8','8','2,6,10,14','0,6,10','6,14','4,12']
 };
 export function defaultSettings(){
- return applyStyle({seed:42,master:.65},'techno');
+ const settings=applyStyle({seed:42,master:.65},'techno');
+ for(const channel of Object.values(settings.channels))channel.instrument='classic';
+ return settings;
 }
 export function applyStyle(settings,key){
  if(!Object.prototype.hasOwnProperty.call(STYLES,key)) throw new RangeError(`Unknown style: ${key}`);
@@ -30,7 +70,7 @@ export function applyStyle(settings,key){
  settings.patterns=Object.fromEntries(CHANNELS.map((name,i)=>[name,Array.from({length:16},(_,step)=>RHYTHMS[key][i].split(',').map(Number).includes(step))]));
  Object.assign(settings,{swing:key==='house'?.16:key==='breakbeat'?.1:0,cutoff:key==='dub'?1400:key==='acid'?1700:3000,resonance:key==='acid'?12:3,drive:key==='hardcore'?.7:.2,delay:key==='dub'?.5:.2,reverb:key==='dub'?.35:.15});
  settings.root=0;settings.scale='minor';settings.density=.65;
- settings.channels=Object.fromEntries(CHANNELS.map((name,i)=>[name,{gain:[.8,.55,.32,.55,.3,.2][i],mute:false,solo:false,wave:i===1?'triangle':i<3?'sine':i===5?'triangle':'sawtooth',decay:[.3,.18,.055,.18,.22,1.1][i]}]));
+ settings.channels=Object.fromEntries(CHANNELS.map((name,i)=>[name,{instrument:STYLE_INSTRUMENTS[key][i],gain:[.8,.55,.32,.55,.3,.2][i],mute:false,solo:false,wave:i===1?'triangle':i<3?'sine':i===5?'triangle':'sawtooth',decay:[.3,.18,.055,.18,.22,1.1][i]}]));
  settings.channels.bass.wave=key==='dub'||key==='dnb'?'sine':'sawtooth';settings.channels.kick.decay=key==='hardcore'?.45:.3;
  if(key==='techno'){
   Object.assign(settings,{cutoff:1150,resonance:.8,drive:.035,delay:.12,reverb:.12,density:.28});
@@ -87,6 +127,8 @@ export function randomizePreset(settings,key,seed){
   c.gain=Math.min(.95,p.gains[i]*(.8+.28*energy+.12*random()));
   c.decay=clamp(p.decays[i]*(.8+.4*random()),.03,1.8);
   c.wave=name==='bass'?pick(p.bass):name==='lead'?pick(p.lead):name==='pad'?pick(['sine','triangle']):name==='snare'?pick(['sine','triangle']):'sine';
+  const alternatives=name==='kick'?(key==='hardcore'?['kick_industrial','kick_909']:['kick_808','kick_909']):name==='snare'?['snare','clap','rim']:name==='hat'?['hat_closed','hat_open','hat_metallic']:name==='bass'?(key==='techno'||key==='dub'?['sub','classic']:key==='acid'||key==='psytrance'?['acid','pluck']:['reese','sub']):name==='lead'?(key==='techno'?['pluck','classic']:['pluck','fm_bell','organ','supersaw']):['glass_pad','organ','classic'];
+  c.instrument=random()<.65?STYLE_INSTRUMENTS[key][i]:pick(alternatives);
  }
  // Keep the minimal family in the background even at its brightest variation.
  if(key==='techno')for(const name of ['lead','pad'])settings.channels[name].gain=Math.min(.09,settings.channels[name].gain);
@@ -95,14 +137,14 @@ export function randomizePreset(settings,key,seed){
 }
 export function patternEvents(settings,bar=0){
  const random=rng((settings.seed>>>0)^Math.imul(bar+1,2654435761)), events=[];
- const scale=({minor:[0,2,3,5,7,8,10],major:[0,2,4,5,7,9,11],pentatonic:[0,3,5,7,10],dorian:[0,2,3,5,7,9,10],phrygian:[0,1,3,5,7,8,10]})[settings.scale]||[0,2,3,5,7,8,10];
+ const scale=(Object.prototype.hasOwnProperty.call(SCALES,settings.scale)?SCALES[settings.scale]:SCALES.minor).intervals;
  const degree=[0,5,3,4][Math.floor(bar/2)%4];
  for(const instrument of CHANNELS) for(let step=0;step<16;step++){
   const chance=random();if(!settings.patterns[instrument]?.[step])continue;
   if(['lead','pad'].includes(instrument)&&chance>clamp(settings.density,0,1))continue;
   const index=(degree+(instrument==='lead'?Math.floor(random()*scale.length):step%3===0?0:2))%scale.length;
   const note=(instrument==='bass'?36:instrument==='pad'?48:60)+Number(settings.root||0)+scale[index];
-  events.push({instrument,step,beat:step/4+(step%2?clamp(settings.swing,0,.45)/4:0),note,amp:instrument==='hat'?.4+chance*.25:.65+chance*.2,duration:settings.channels[instrument].decay,wave:settings.channels[instrument].wave});
+  events.push({instrument,voice:instrumentFor(instrument,settings.channels[instrument].instrument),step,beat:step/4+(step%2?clamp(settings.swing,0,.45)/4:0),note,amp:instrument==='hat'?.4+chance*.25:.65+chance*.2,duration:settings.channels[instrument].decay,wave:settings.channels[instrument].wave});
  }
  return events.sort((a,b)=>a.beat-b.beat);
 }
@@ -133,24 +175,57 @@ function updateGraph(context,g,s,initial=false){
  const solo=CHANNELS.some(name=>s.channels[name].solo);
  for(const name of CHANNELS){const c=s.channels[name];set(g.channels[name].gain,c.mute||solo&&!c.solo?0:clamp(c.gain,0,1));}
 }
+function patchVoice(context,event,id,start,end,filter,sources,nodes){
+ const duration=end-start,freq=440*Math.pow(2,(clamp(event.note??48,0,127)-69)/12),wave=['sine','triangle','square','sawtooth'].includes(event.wave)?event.wave:'sawtooth';
+ const gain=(value,target=filter)=>{const node=context.createGain();node.gain.value=value;node.connect(target);nodes.push(node);return node;};
+ const osc=(hz,type='sine',level=1,detune=0,target=filter)=>{const node=context.createOscillator();node.type=type;node.frequency.setValueAtTime(hz,start);node.detune.value=detune;node.connect(gain(level,target));sources.push(node);return node;};
+ const noise=(level,hz,type='highpass',decay=duration)=>{
+  const buffer=context.createBuffer(1,Math.ceil((duration+.04)*context.sampleRate),context.sampleRate),data=buffer.getChannelData(0),random=rng(731+Math.round(start*1000));
+  for(let i=0;i<data.length;i++)data[i]=(random()*2-1)*Math.exp(-i/context.sampleRate*5/decay);
+  const node=context.createBufferSource(),eq=context.createBiquadFilter();node.buffer=buffer;eq.type=type;eq.frequency.value=hz;node.connect(eq);eq.connect(gain(level));nodes.push(eq);sources.push(node);return node;
+ };
+ const sweep=(from,to,q=1)=>{filter.Q.value=q;filter.frequency.setValueAtTime(Math.min(from,context.sampleRate*.45),start);filter.frequency.exponentialRampToValueAtTime(to,end);};
+ const fm=(ratio,index,level=1,detune=0)=>{const carrier=osc(freq,'sine',level,detune),mod=context.createOscillator(),depth=gain(freq*index,carrier.frequency);mod.frequency.value=freq*ratio;depth.gain.setValueAtTime(freq*index,start);depth.gain.exponentialRampToValueAtTime(freq*.015,end);mod.connect(depth);sources.push(mod);};
+ const patches={
+  sub:()=>{filter.frequency.value=750;osc(freq,wave,.8);osc(freq/2,'sine',.2);},
+  reese:()=>{sweep(2800,350);osc(freq,wave,.36,-16);osc(freq,wave,.36,16);osc(freq/2,'sine',.22);},
+  acid:()=>{sweep(6500,160,9);osc(freq,wave,.52);},
+  fm_bell:()=>{filter.frequency.value=14000;fm(2.71,3.5,.8);},
+  pluck:()=>{sweep(9500,180,1.8);osc(freq,wave,.75);osc(freq*2,'triangle',.12);},
+  supersaw:()=>{filter.frequency.value=8500;for(const detune of [-31,-19,-8,0,8,19,31])osc(freq,wave,.13,detune);},
+  organ:()=>{filter.frequency.value=11000;for(const [ratio,level] of [[1,.5],[2,.24],[3,.15],[4,.07]])osc(freq*ratio,'sine',level);},
+  glass_pad:()=>{filter.frequency.value=7000;fm(3.99,1.7,.43,-7);fm(2.01,1.2,.43,7);},
+  kick_808:()=>{filter.frequency.value=4500;const body=osc(145,'sine',.94);body.frequency.exponentialRampToValueAtTime(38,start+Math.min(.16,duration));noise(.08,2400,'lowpass',.012);},
+  kick_909:()=>{filter.frequency.value=6500;const body=osc(185,'triangle',.85);body.frequency.exponentialRampToValueAtTime(51,start+Math.min(.075,duration));noise(.22,3800,'lowpass',.025);},
+  kick_industrial:()=>{filter.frequency.value=9000;const distortion=context.createWaveShaper(),curve=new Float32Array(512);for(let i=0;i<512;i++)curve[i]=Math.tanh((i/255.5-1)*8)*.6;distortion.curve=curve;distortion.connect(filter);nodes.push(distortion);const body=osc(220,'sawtooth',.8,0,distortion);body.frequency.exponentialRampToValueAtTime(43,start+Math.min(.13,duration));osc(67,'square',.2,0,distortion);noise(.25,2200,'bandpass',.055);},
+  snare:()=>{filter.frequency.value=10000;osc(185,'triangle',.35);osc(330,'sine',.18);noise(.75,1800,'highpass');},
+  clap:()=>{filter.type='bandpass';filter.frequency.value=1250;filter.Q.value=.7;const source=noise(.9,1250,'bandpass',Math.max(.1,duration)),bursts=gain(0);source.disconnect();source.connect(bursts);for(let i=0;i<3;i++){const t=start+Math.min(duration*.6,i*.018);bursts.gain.setValueAtTime(1,t);bursts.gain.exponentialRampToValueAtTime(.08,Math.min(end,t+.014));}bursts.gain.setValueAtTime(.5,start+Math.min(.06,duration*.7));bursts.gain.exponentialRampToValueAtTime(.0001,end);},
+  rim:()=>{filter.type='bandpass';filter.frequency.value=1700;filter.Q.value=2;osc(480,'triangle',.65);osc(1730,'sine',.35);},
+  hat_closed:()=>{filter.type='highpass';filter.frequency.value=7200;noise(.5,8500,'highpass',Math.min(.045,duration));for(const hz of [421,587,845,1133,1751,2399])osc(hz,'square',.035);},
+  hat_open:()=>{filter.type='highpass';filter.frequency.value=4800;noise(.7,6100,'highpass',duration*2);osc(3371,'square',.09);osc(4927,'square',.09);},
+  hat_metallic:()=>{filter.type='highpass';filter.frequency.value=6200;for(const hz of [521,733,1039,1423,2137,3181])osc(hz,'square',.17);}
+ };
+ patches[id]();
+}
 function voice(context,graph,event,time,active,tag='groove'){
  if(!CHANNELS.includes(event.instrument))throw new RangeError('Unknown instrument');
  const start=Math.max(context.currentTime,time), duration=clamp(event.duration??.2,.01,96), end=start+duration;
  // Count overlapping voices, not all future offline-render events.
  let overlapping=0;for(const entry of active)if(entry.end>start&&++overlapping>=128)return;
- const amp=context.createGain(),filter=context.createBiquadFilter();
- const level=clamp(event.amp??.5,0,2)*.42,attack=clamp(event.attack??.004,.001,duration),hold=Math.min(end,start+attack+clamp(event.sustain??0,0,duration));
+ const amp=context.createGain(),filter=context.createBiquadFilter(),id=instrumentFor(event.instrument,event.voice);
+ const level=clamp(event.amp??.5,0,2)*.42,attack=clamp(event.attack??(id==='glass_pad'?Math.min(.18,duration*.3):.004),.001,duration),hold=Math.min(end,start+attack+clamp(event.sustain??0,0,duration));
  amp.gain.setValueAtTime(0,start);
  if(level>0){amp.gain.linearRampToValueAtTime(level,start+attack);amp.gain.setValueAtTime(level,hold);if(hold<end)amp.gain.exponentialRampToValueAtTime(.00001,end);amp.gain.setValueAtTime(0,end);}
  filter.type='lowpass';filter.frequency.value=event.instrument==='bass'?1800:12000;
  filter.connect(amp);amp.connect(graph.channels[event.instrument]);
- const sources=[];
- if(event.instrument==='hat'||event.instrument==='snare'){
+ const sources=[],nodes=[amp,filter];
+ if(id!=='classic')patchVoice(context,event,id,start,end,filter,sources,nodes);
+ if(id==='classic'&&(event.instrument==='hat'||event.instrument==='snare')){
   const buffer=context.createBuffer(1,Math.ceil((duration+.04)*context.sampleRate),context.sampleRate),data=buffer.getChannelData(0),random=rng(321+Math.round(start*1000));
   for(let i=0;i<data.length;i++)data[i]=random()*2-1;
   const noise=context.createBufferSource();noise.buffer=buffer;filter.type='highpass';filter.frequency.value=event.instrument==='hat'?6500:1300;noise.connect(filter);sources.push(noise);
  }
- if(event.instrument!=='hat'){
+ if(id==='classic'&&event.instrument!=='hat'){
   const osc=context.createOscillator();osc.type=['sine','triangle','square','sawtooth'].includes(event.wave)?event.wave:'sine';
   const freq=440*Math.pow(2,(clamp(event.note??48,0,127)-69)/12);
   osc.frequency.setValueAtTime(event.instrument==='kick'?110:event.instrument==='snare'?180:freq,start);
@@ -158,10 +233,10 @@ function voice(context,graph,event,time,active,tag='groove'){
   if(event.instrument==='snare'){osc.frequency.exponentialRampToValueAtTime(75,end);}
   osc.connect(filter);sources.push(osc);
  }
- const entry={sources,amp,filter,tag,end};active.add(entry);let remaining=sources.length;
- for(const source of sources){source.onended=()=>{source.disconnect();if(--remaining===0){filter.disconnect();amp.disconnect();active.delete(entry);}};source.start(start);source.stop(end+.01);}
+ const entry={sources,nodes,amp,filter,tag,end};active.add(entry);let remaining=sources.length;
+ for(const source of sources){source.onended=()=>{source.disconnect();if(--remaining===0){for(const node of nodes)node.disconnect();active.delete(entry);}};source.start(start);source.stop(end+.01);}
 }
-function kill(active,tag){for(const entry of active)if(!tag||entry.tag===tag){for(const source of entry.sources){try{source.stop();}catch{}source.disconnect();}entry.amp.disconnect();entry.filter.disconnect();active.delete(entry);}}
+function kill(active,tag){for(const entry of active)if(!tag||entry.tag===tag){for(const source of entry.sources){source.onended=null;try{source.stop();}catch{}source.disconnect();}for(const node of entry.nodes)node.disconnect();active.delete(entry);}}
 export class Engine {
  constructor(settings=defaultSettings()) {this.settings=settings;this.context=null;this.graph=null;this.active=new Set();this._playing=false;this._step=0;this.stepTimeline=[];this.nextStep=0;this.tickIndex=0;this.timer=null;this.codeTimer=null;this.code=null;this.decks=[{playing:false,gain:.8,rate:1,low:0,mid:0,high:0,cutoff:20000,start:0,end:1,reverse:false},{playing:false,gain:.8,rate:1,low:0,mid:0,high:0,cutoff:20000,start:0,end:1,reverse:false}];this.fade=0;}
  get playing(){return this._playing;}
@@ -169,13 +244,25 @@ export class Engine {
  get analyser(){return this.graph?.analyser||null;}
  async init(){if(!this.context){const Context=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Context)throw new Error('Web Audio is not available in this browser');this.context=new Context();this.graph=connectGraph(this.context,this.settings,this.context.destination);}if(this.context.state==='suspended')await this.context.resume();return this;}
  async play(){await this.init();if(this._playing)return;this._playing=true;this.nextStep=this.context.currentTime+.04;this.stepTimeline=[];this._schedule();this.timer=setInterval(()=>this._schedule(),25);}
- _schedule(){this._step=this.step;const beat=60/clamp(this.settings.bpm,30,300);while(this.nextStep<this.context.currentTime+.12){const step=this.tickIndex%16,bar=Math.floor(this.tickIndex/16);for(const event of patternEvents(this.settings,bar).filter(e=>e.step===step))voice(this.context,this.graph,event,this.nextStep+(event.beat-step/4)*beat,this.active);this.stepTimeline.push({step,index:this.tickIndex,time:this.nextStep});this.tickIndex++;this.nextStep+=beat/4;}}
+ _schedule(){
+  this._step=this.step;const beat=60/clamp(this.settings.bpm,30,300),now=this.context.currentTime;
+  // A throttled tab must rejoin the current phrase, not compress missed beats into a burst.
+  if(now-this.nextStep>.12){const missed=Math.ceil((now-this.nextStep)/(beat/4));this.tickIndex+=missed;this.nextStep+=missed*beat/4;}
+  while(this.nextStep<now+.12){const step=this.tickIndex%16,bar=Math.floor(this.tickIndex/16);for(const event of patternEvents(this.settings,bar).filter(e=>e.step===step))voice(this.context,this.graph,event,this.nextStep+(event.beat-step/4)*beat,this.active);this.stepTimeline.push({step,index:this.tickIndex,time:this.nextStep});this.tickIndex++;this.nextStep+=beat/4;}
+ }
  pause(){this._step=this.step;if(this.stepTimeline.length)this.tickIndex=this.stepTimeline[0].index;this.stepTimeline=[];this._playing=false;clearInterval(this.timer);this.timer=null;kill(this.active,'groove');}
  stop(){this.pause();this.tickIndex=0;this._step=0;this.stopCode();for(let i=0;i<2;i++)this.deck(i,{playing:false});}
  update(settings){this.settings=settings;if(this.graph)updateGraph(this.context,this.graph,settings);}
  trigger(event,time){if(!this.context)throw new Error('Initialize audio first');voice(this.context,this.graph,event,time??this.context.currentTime,this.active,'code');}
  async runCode(compiled){if(!compiled?.loops?.length||!Number.isFinite(compiled.bpm)||compiled.bpm<30||compiled.bpm>300)throw new Error('Invalid compiled code');for(const loop of compiled.loops)if(!Number.isFinite(loop.beats)||loop.beats<=0||!loop.events?.length||loop.events.length>4096)throw new Error('Invalid code loop');await this.init();this.stopCode();const start=this.context.currentTime+.05;this.code={compiled,loops:compiled.loops.map(loop=>({loop,cycle:0,index:0})),start};this._scheduleCode();this.codeTimer=setInterval(()=>this._scheduleCode(),25);}
- _scheduleCode(){if(!this.code)return;const {compiled,loops,start}=this.code,beat=60/compiled.bpm;for(const state of loops){let count=0;while(count++<4096){const event=state.loop.events[state.index],time=start+(state.cycle*state.loop.beats+event.beat)*beat;if(time>this.context.currentTime+.12)break;this.trigger(event,time);if(++state.index===state.loop.events.length){state.index=0;state.cycle++;}}}}
+ _scheduleCode(){
+  if(!this.code)return;const {compiled,loops,start}=this.code,beat=60/compiled.bpm,now=this.context.currentTime;
+  for(const state of loops){
+   const currentCycle=Math.max(0,Math.floor((now-start)/(state.loop.beats*beat)));
+   if(currentCycle>state.cycle){state.cycle=currentCycle;state.index=0;}
+   let count=0;while(count++<4096){const event=state.loop.events[state.index],time=start+(state.cycle*state.loop.beats+event.beat)*beat;if(time>now+.12)break;if(time>=now-.05)this.trigger(event,time);if(++state.index===state.loop.events.length){state.index=0;state.cycle++;}}
+  }
+ }
  stopCode(){clearInterval(this.codeTimer);this.codeTimer=null;this.code=null;kill(this.active,'code');}
  async loadTrack(index,file){const d=this.decks[index];if(!d)throw new RangeError('Deck index must be 0 or 1');if(!file||file.size>40*1024*1024||file.size===0)throw new Error('Choose an audio file under 40 MB');await this.init();const decoded=await this.context.decodeAudioData(await file.arrayBuffer());if(decoded.duration>300||decoded.length*decoded.numberOfChannels>28000000)throw new Error('Track limit: 5 minutes / 28 million decoded samples');this.deck(index,{playing:false});d.buffer=decoded;d.reversed=null;d.start=0;d.end=1;const data=decoded.getChannelData(0),peaks=Array.from({length:160},(_,i)=>{const start=Math.floor(i*data.length/160),end=Math.floor((i+1)*data.length/160);let peak=0;for(let j=start;j<end;j++)peak=Math.max(peak,Math.abs(data[j]));return peak;});return {name:file.name||'Local audio',duration:decoded.duration,peaks};}
  deck(index,options={}){const d=this.decks[index];if(!d)throw new RangeError('Deck index must be 0 or 1');const restart=['start','end','reverse'].some(k=>k in options&&options[k]!==d[k]);Object.assign(d,options);if(!this.context)return;d.gain=clamp(d.gain,0,1);d.rate=clamp(d.rate,.25,2);d.start=clamp(d.start,0,.99);d.end=clamp(d.end,d.start+.01,1);

@@ -10,6 +10,12 @@ An on-device electronic music instrument: generative groovebox, two local remix 
 
 ## Workspaces
 
+### New in 1.2
+
+The scale menu now covers all seven diatonic modes, harmonic/melodic minor, pentatonic and blues scales, whole-tone and diminished colors, and darker regional minor variants. Bass, lead and pad generation follows the chosen intervals and root. Select instruments independently per mixer lane: sub/Reese/acid bass, FM bells, plucks, supersaws, organ and glassy pads, plus expanded kick, snare/clap/rim and hat percussion. Instrument choice and waveform/decay are separate tone controls where supported; existing projects retain their classic voice when an instrument field is absent.
+
+**Session timer → Auto variation** enables a fresh genre-aware variation every custom **0.1–120 minutes** of groovebox playback. It works with **No timer** for continuous evolving music and can coexist with a stop timer. Pause holds the countdown, Stop resets it, and manual Variation or genre selection restarts the interval. A simultaneous stop deadline takes priority. Suspended audio does not advance the countdown; returning after a long scheduling gap causes at most one variation, not a burst. Automatic variation is off initially and remains an independent local preference: importing a project cannot enable it. Neither it nor the tour starts audio automatically. Browser/OS background suspension limits still apply.
+
 ### New in 1.1
 
 Every visit starts a fresh genre-aware sound: tempo, groove, timbres, voice levels, decay and effects vary together within the selected style. Techno starts dark and minimal, with a rounded deep kick, low bass and restrained melody. Select another genre or press Variation to explore another complete sound. **Settings → Fresh sound on each visit** can be turned off to keep an exact sound across reloads. Export JSON before exploring if you want to keep a snapshot; imported projects apply exactly to the current visit.
@@ -24,7 +30,7 @@ A skippable first-run guide and a replayable mixer walkthrough explain the six v
 
 Project JSON saves settings, sequence and code, **not imported audio**; reopen source tracks after restoring. Settings use local browser storage. Browser storage is origin-scoped: data does not automatically transfer between the web app, another browser and the APK.
 
-Code has one global tempo: the final `use_bpm` governs all code loops, independently of the groovebox tempo. Sleep and attack/sustain/release parameters are in beats. General Ruby, variables, user-defined functions and `with_fx` are not implemented. Hats are synthesized noise; their decay is adjustable, but they do not offer an oscillator waveform selector.
+Code has one global tempo: the final `use_bpm` governs all code loops, independently of the groovebox tempo. Sleep and attack/sustain/release parameters are in beats. General Ruby, variables, user-defined functions and `with_fx` are not implemented. The instrument menu describes each patch; waveform selection is available when it shapes that patch, while decay controls its ring length.
 
 ## Offline and Android boundaries
 
@@ -45,6 +51,7 @@ python tests/browser_test.py
 python tests/ui_test.py
 python tests/onboarding_test.py
 python tests/preset_audio_test.py
+python tests/expansion_ui_test.py
 ```
 
 Tests use Node's built-in test runner; browser tests require Python Playwright and Chromium. Browser tests render real offline WAV, measure live audio, exercise offline reload and cache repair, and check document width at mobile sizes.

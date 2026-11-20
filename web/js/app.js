@@ -1,5 +1,6 @@
-import { STYLES, defaultSettings, applyStyle, randomizePreset, Engine } from './engine.js';
+import { STYLES, SCALES, INSTRUMENTS, defaultSettings, applyStyle, randomizePreset, Engine } from './engine.js';
 import { compile, EXAMPLES } from './code.js';
+import { VariationClock } from './variation.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -19,7 +20,7 @@ function freshSound(key = settings.style) {
   console.info('[boombox-init] preset generated');
 }
 const LIMITS = { bpm:[40,240], seed:[1,2147483647], root:[0,11], swing:[0,.45], density:[0,1], master:[0,1], cutoff:[40,20000], resonance:[0,18], drive:[0,1], delay:[0,.8], reverb:[0,1] };
-const SCALES = ['minor','major','dorian','phrygian','pentatonic'];
+
 const WAVES = ['sine','triangle','sawtooth','square'];
 const clamp = (n,min,max) => Math.min(max,Math.max(min,n));
 let settings = defaultSettings();
@@ -29,7 +30,14 @@ function safeCode(value) {
   return value;
 }
 let look = { theme:'amber', textSize:'normal', motion:true };
-let elapsed = 0, timer = 0, lastTick = performance.now(), recording = false, registration;
+let elapsed = 0, timer = 0, recording = false, registration;
+const CADENCE = 'boombox.variation.v1';
+const variationClock = new VariationClock();
+try {
+  const saved = JSON.parse(localStorage.getItem(CADENCE) || 'null');
+  if (saved) variationClock.configure({minutes:saved.minutes, enabled:saved.enabled});
+} catch { /* Invalid local preferences leave automatic variation off. */ }
+let cadenceTimer = null, audioTick = null, cadenceEpoch = null;
 let raf = 0, lastStep = -1, started = false;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const decks = [{loaded:false,playing:false,duration:0,peaks:[]},{loaded:false,playing:false,duration:0,peaks:[]}];
@@ -44,9 +52,11 @@ function safeSettings(input) {
     if (typeof input[key] === 'number' && Number.isFinite(input[key])) result[key] = clamp(input[key],min,max);
   }
   result.seed = Math.round(result.seed); result.root = Math.round(result.root); result.bpm = Math.round(result.bpm);
-  if (SCALES.includes(input.scale)) result.scale = input.scale;
+  if (Object.prototype.hasOwnProperty.call(SCALES,input.scale)) result.scale = input.scale;
   for (const lane of LANES) {
     const ch = input.channels?.[lane];
+    // Old projects must keep the original timbre, not the genre's newer patch.
+    result.channels[lane].instrument = Object.prototype.hasOwnProperty.call(INSTRUMENTS,ch?.instrument) && INSTRUMENTS[ch.instrument].lanes.includes(lane) ? ch.instrument : 'classic';
     if (ch && typeof ch === 'object') {
       if (typeof ch.gain === 'number' && Number.isFinite(ch.gain)) result.channels[lane].gain = clamp(ch.gain,0,1);
       if (typeof ch.decay === 'number' && Number.isFinite(ch.decay)) result.channels[lane].decay = clamp(ch.decay,.03,4);
@@ -80,7 +90,7 @@ try { freshVisits = localStorage.getItem(VISITS) !== 'false'; } catch { /* Local
 console.info('[boombox-init] preferences loaded');
 if (freshVisits) freshSound();
 const engine = new Engine(settings);
-window.boombox = { engine, get settings() { return settings; } };
+window.boombox = { engine, variationClock, variationTick, get settings() { return settings; } };
 function persist() {
   try { localStorage.setItem(STORE,JSON.stringify({version:1,settings,code})); }
   catch { announce('Changes work for this visit, but browser storage is unavailable. Export JSON for a backup.'); }
@@ -114,8 +124,9 @@ const effectHints = {cutoff:'Cutoff removes brightness above this frequency. Low
 for(const [key,style] of Object.entries(STYLES)) {
   const b=make('button','genre'); b.type='button'; b.dataset.genre=key; b.setAttribute('aria-pressed',String(key===settings.style));
   b.append(make('span','genre-mark',genreMarks[key]||'∿'),make('span','genre-name',style.name),make('small','',String(style.bpm)));
-  b.title=style.description; b.addEventListener('click',()=>{freshSound(key);updateSound();renderSettings();announce(`${style.name} variation loaded. Make it yours.`);}); $('#genres').append(b);
+  b.title=style.description; b.addEventListener('click',()=>{resetCadence();freshSound(key);updateSound();renderSettings();announce(`${style.name} variation loaded. Make it yours.`);}); $('#genres').append(b);
 }
+for (const [id,scale] of Object.entries(SCALES)) { const option=make('option','',scale.name);option.value=id;$('#scale').append(option); }
 ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'].forEach((note,i)=>{const o=make('option','',note);o.value=i;$('#root').append(o);});
 function renderSequencer() {
   const grid=$('#sequencer');grid.replaceChildren(make('span'));
@@ -136,10 +147,17 @@ function renderMixer() {
     const switches=make('div','mute-solo');
     for(const key of ['mute','solo']) { const b=make('button','',key==='mute'?'M':'S');b.title=key==='mute'?'Mute silences this voice.':'Solo isolates this voice; multiple solos can play together.';b.setAttribute('aria-label',`${key} ${lane}`);b.setAttribute('aria-pressed',String(ch[key]));b.addEventListener('click',()=>{ch[key]=!ch[key];b.setAttribute('aria-pressed',String(ch[key]));updateSound();});switches.append(b); }
     strip.append(switches,rangeControl(`${lane} gain`,ch.gain,0,1,.01,value=>{ch.gain=value;updateSound();}));
+    const instrumentLabel=make('label','control','Instrument'), instrument=make('select');
+    instrument.setAttribute('aria-label',`${lane} instrument`);
+    for (const [id,patch] of Object.entries(INSTRUMENTS)) if(patch.lanes.includes(lane)) {
+      const option=make('option','',patch.name);option.value=id;option.title=patch.description;instrument.append(option);
+    }
+    instrument.value=ch.instrument || 'classic';instrument.title=INSTRUMENTS[instrument.value].description;
+    instrumentLabel.append(instrument);strip.append(instrumentLabel);
     const label=make('label','control','Wave'), select=make('select');select.setAttribute('aria-label',`${lane} waveform`);
     WAVES.forEach(w=>{const o=make('option','',w.replace('sawtooth','saw'));o.value=w;select.append(o);});select.value=ch.wave;select.title=toneHints.wave;select.addEventListener('change',()=>{ch.wave=select.value;updateSound();});label.append(select);
-    if(lane!=='hat')strip.append(label);
-    else strip.append(make('p','fine','Noise percussion'));
+    label.hidden=INSTRUMENTS[instrument.value].wave===false;strip.append(label);
+    instrument.addEventListener('change',()=>{ch.instrument=instrument.value;instrument.title=INSTRUMENTS[instrument.value].description;label.hidden=INSTRUMENTS[instrument.value].wave===false;updateSound();});
     const decay=rangeControl(`${lane} decay`,ch.decay,.03,4,.01,value=>{ch.decay=value;updateSound();},n=>`${n.toFixed(2)}s`);decay.title=toneHints.decay;
     strip.append(decay,make('p','fine','Wave = tone · Decay = ring length'));$('#mixer').append(strip);
   });
@@ -161,6 +179,7 @@ $$('[data-setting]').forEach(input=>input.addEventListener('input',()=>{
   updateSound();
 }));
 $('#variation').addEventListener('click',()=>{
+  resetCadence();
   freshSound();
   updateSound();renderSettings();announce(`New genre variation · seed ${settings.seed}. Master volume preserved.`);
 });
@@ -246,17 +265,65 @@ function syncPlay() {
   $('#play').setAttribute('aria-label',engine.playing?'Pause groovebox':'Play groovebox');$('#playState').textContent=engine.playing?'PLAYING':'STANDBY';scheduleVisuals();drawScore();
 }
 async function initAudio() { await engine.init();started=true; }
-async function togglePlay() { if(engine.playing)engine.pause();else {await initAudio();await engine.play();}syncPlay();announce(engine.playing?'Groovebox playing.':'Groovebox paused.'); }
+async function togglePlay() {
+  if(engine.playing) { variationTick();engine.pause();clearCadenceTimer(); }
+  else {await initAudio();await engine.play();audioTick=engine.context.currentTime;if(cadenceTimer===null)cadenceTimer=setInterval(variationTick,250);}
+  syncPlay();renderVariationStatus();announce(engine.playing?'Groovebox playing.':'Groovebox paused.');
+}
 function stopAll() {
+  clearCadenceTimer();variationClock.reset();
   engine.stop();engine.stopCode();decks.forEach((d,i)=>{if(d.loaded)engine.deck(i,{playing:false});d.playing=false;const b=$(`#deckPlay${i}`);if(b){b.textContent='▶ Play';b.setAttribute('aria-pressed','false');}});
-  elapsed=0;syncPlay();updateClock();announce('All audio stopped.');
+  elapsed=0;syncPlay();updateClock();renderVariationStatus();announce('All audio stopped.');
 }
 $('#play').addEventListener('click',guarded(togglePlay));$('#stop').addEventListener('click',guarded(stopAll));
 document.addEventListener('keydown',e=>{
   if(e.code==='Space'&&!e.repeat&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!$('dialog[open]')&&!e.target.closest('input,textarea,select,button,a,summary,[contenteditable]')) {e.preventDefault();guarded(togglePlay)();}
 });
 function updateClock() {const seconds=Math.floor(elapsed);$('#elapsed').textContent=`${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;}
-setInterval(()=>{const now=performance.now(),delta=(now-lastTick)/1000;lastTick=now;if(engine.playing){elapsed+=delta;updateClock();if(timer&&elapsed>=timer*60){stopAll();announce('Session complete. All audio stopped.');}}updateStep();},70);
+function clearCadenceTimer() { clearInterval(cadenceTimer);cadenceTimer=null;audioTick=null;cadenceEpoch=null; }
+function renderVariationStatus() {
+  const seconds=Math.ceil(variationClock.remaining), remaining=`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
+  $('#variationStatus').textContent=variationClock.enabled ? `Auto variation · ${remaining} ${engine.playing ? 'remaining' : 'on Play / paused'}` : 'Auto variation off';
+}
+function markCadenceStart() { const now=engine.context?.currentTime;cadenceEpoch=Number.isFinite(now)?now:null; }
+function resetCadence() { variationClock.reset();markCadenceStart();renderVariationStatus(); }
+function variationTick() {
+  const context=engine.context;
+  const now=context?.currentTime;
+  const delta=audioTick===null || !Number.isFinite(now) ? 0 : Math.max(0,now-audioTick);
+  const cadenceDelta=cadenceEpoch===null ? delta : Math.min(delta,Math.max(0,now-cadenceEpoch));
+  audioTick=Number.isFinite(now) ? now : null;
+  const playing=engine.playing && context?.state==='running';
+  if(playing) {
+    elapsed+=delta;updateClock();
+    // Session stop has priority: never generate a fresh sound at its deadline.
+    if(timer && elapsed>=timer*60) {stopAll();announce('Session complete. All audio stopped.');return;}
+    if(variationClock.advance(cadenceDelta,true)) {
+      freshSound();updateSound();renderSettings();announce(`Automatic genre variation · seed ${settings.seed}. Master volume preserved.`);
+      if($('#tourSheet').open)renderTour();
+    }
+  }
+  renderVariationStatus();updateStep();
+}
+$('#autoVariation').checked=variationClock.enabled;
+$('#variationMinutes').value=variationClock.minutes;
+renderVariationStatus();
+function configureVariation() {
+  const input=$('#variationMinutes'), toggle=$('#autoVariation'), minutes=Number(input.value);
+  const valid=!!input.value && Number.isFinite(minutes) && minutes>=.1 && minutes<=120;
+  input.setCustomValidity(valid ? '' : 'Choose 0.1 to 120 minutes.');
+  // Turning off must always work, even while the interval field is incomplete.
+  const previousMinutes=variationClock.minutes,previousEnabled=variationClock.enabled;
+  variationClock.configure({minutes:valid ? minutes : variationClock.minutes,enabled:toggle.checked && (valid || variationClock.enabled)});
+  if(previousMinutes!==variationClock.minutes || previousEnabled!==variationClock.enabled)markCadenceStart();
+  toggle.checked=variationClock.enabled;renderVariationStatus();
+  if(!valid)input.reportValidity();
+  try {localStorage.setItem(CADENCE,JSON.stringify({minutes:variationClock.minutes,enabled:variationClock.enabled}));}
+  catch {announce('Automatic variation works for this visit; browser storage is unavailable.');}
+}
+$('#autoVariation').addEventListener('change',configureVariation);
+$('#variationMinutes').addEventListener('input',configureVariation);
+setInterval(updateStep,70);
 $('#timer').addEventListener('change',e=>{timer=Number(e.target.value);elapsed=0;updateClock();$('#timerLabel').textContent=timer?`${timer} min`:'No timer';announce(timer?`Timer set for ${timer} minutes of playback.`:'Session timer off.');});
 function updateStep() {
   const step=engine.playing?((Number(engine.step)||0)%16+16)%16:-1;if(step===lastStep)return;lastStep=step;
@@ -317,7 +384,7 @@ $('#crossfader').addEventListener('input',guarded(e=>engine.crossfade(Number(e.t
 for(const name of Object.keys(EXAMPLES)){const o=make('option','',name);o.value=name;$('#codeExample').append(o);}
 $('#codeEditor').value=code;
 $('#codeEditor').maxLength=64000;
-$('#codeHint').append(make('p','','One global code tempo: the final use_bpm applies to every code loop, independently of the groovebox. Sleep and attack/sustain/release values are in beats. Synths: sine, saw, square, tri, bass, prophet, beep. Samples: bd_haus, bd_tek, sn_dub, drum_snare_hard, drum_cymbal_closed, drum_cymbal_open. Repeat a phrase with 4.times do … end. Use the commands listed here and the included examples to build your loops.'));
+$('#codeHint').append(make('p','','One global code tempo: the final use_bpm applies to every code loop, independently of the groovebox. Sleep and attack/sustain/release values are in beats. Synths: sine, saw, square, tri, triangle, bass, prophet, beep, sub, reese, acid, fm_bell, pluck, supersaw, organ, glass_pad. Synthesized percussion samples: bd_haus, bd_tek, sn_dub, drum_snare_hard, drum_cymbal_closed, drum_cymbal_open, bd_808, bd_909, bd_industrial, sn_909, drum_clap, perc_snap, rim, hat_closed, hat_open, hat_metallic. Repeat a phrase with 4.times do … end. Use the commands listed here and the included examples to build your loops.'));
 $('#codeEditor').addEventListener('input',()=>{code=$('#codeEditor').value;persist();});
 $('#codeExample').addEventListener('change',e=>{code=EXAMPLES[e.target.value];$('#codeEditor').value=code;persist();announce('Example loaded. Run it to hear the changes.','#codeStatus');});
 $('#runCode').addEventListener('click',guarded(async()=>{const program=compile($('#codeEditor').value);await initAudio();await engine.runCode(program);announce('Code running locally. Stop code silences this part only.','#codeStatus');},'#codeStatus'));

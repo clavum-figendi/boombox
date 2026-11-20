@@ -70,7 +70,18 @@ public class OfflineTest extends Instrumentation {
                 Thread.sleep(300);
             }
             if (!"false".equals(eval("window.boombox.engine.playing"))) throw new AssertionError("Refresh must not autoplay");
-            result.putString("stream", "BOOMBOX_OFFLINE_AUDIO_PASS: bundled cold launch, dark default, real play button, nonzero audio, stop, variation and fresh offline reload\n");
+            String expanded = eval("(()=>{const scale=document.querySelector('#scale');scale.value='lydian';scale.dispatchEvent(new Event('input',{bubbles:true}));const lead=document.querySelector('[aria-label=\"lead instrument\"]');if(!lead)return false;lead.value='fm_bell';lead.dispatchEvent(new Event('change',{bubbles:true}));return boombox.settings.scale==='lydian'&&boombox.settings.channels.lead.instrument==='fm_bell';})()");
+            if (!"true".equals(expanded)) throw new AssertionError("Expanded scale or instrument controls did not reach the engine");
+            eval("(()=>{const minutes=document.querySelector('#variationMinutes');minutes.value='0.1';minutes.dispatchEvent(new Event('input',{bubbles:true}));minutes.dispatchEvent(new Event('change',{bubbles:true}));const enabled=document.querySelector('#autoVariation');enabled.checked=true;enabled.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#play').click();return true;})()");
+            String autoSeed = eval("window.boombox.settings.seed");
+            end = System.nanoTime() + TimeUnit.SECONDS.toNanos(14);
+            while (autoSeed.equals(eval("window.boombox.settings.seed"))) {
+                if (System.nanoTime() > end) throw new AssertionError("Automatic variation did not run without a session timer");
+                Thread.sleep(500);
+            }
+            if (!"true".equals(eval("window.boombox.engine.playing && document.querySelector('#timer').value==='0'"))) throw new AssertionError("Automatic variation should continue unlimited playback");
+            eval("document.querySelector('#stop').click();true");
+            result.putString("stream", "BOOMBOX_OFFLINE_AUDIO_PASS: cold launch, dark default, audio, stop, fresh reload, Lydian/FM controls and automatic variation with no stop timer\n");
             finish(ActivityResult.OK, result);
         } catch (Throwable e) { result.putString("stream", "FAIL: " + e + "\n"); finish(ActivityResult.FAIL, result); }
     }

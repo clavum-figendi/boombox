@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {compile, EXAMPLES} from '../web/js/code.js';
+import {INSTRUMENTS} from '../web/js/engine.js';
 
 test('compiles timed loops, notes and bounded repeats', () => {
   const result = compile('use_bpm 125\nuse_synth :saw\nlive_loop :riff do\n  2.times do\n    play :e3, amp: 0.4, release: 0.2\n    sleep 0.5\n  end\nend');
@@ -36,6 +37,22 @@ test('envelope options are order independent',()=>{
  const slow=compile('use_bpm 60\nplay 60, attack: 1, sustain: 2, release: 3\nsleep 1').loops[0].events[0];
  const fast=compile('use_bpm 120\nplay 60, attack: 1, sustain: 2, release: 3\nsleep 1').loops[0].events[0];
  assert.equal(slow.duration,6);assert.equal(fast.duration,3);assert.equal(fast.attack,.5);assert.equal(fast.sustain,1);assert.equal(fast.release,1.5);
+});
+
+test('catalog synth and percussion IDs compile to separate lane, voice and waveform fields',()=>{
+ for(const [id,patch] of Object.entries(INSTRUMENTS)){
+  const synth=patch.lanes.includes('lead'),source=synth?`use_synth :${id}\nplay :c3\nsleep 1`:`sample :${id}\nsleep 1`;
+  const event=compile(source).loops[0].events[0];
+  assert.equal(event.instrument,synth?'lead':patch.lanes[0]);assert.equal(event.voice,id);
+  assert(['sine','triangle','square','sawtooth'].includes(event.wave));
+ }
+ for(const [alias,voice,lane] of [['bd_808','kick_808','kick'],['bd_909','kick_909','kick'],['bd_industrial','kick_industrial','kick'],['drum_clap','clap','snare'],['perc_snap','rim','snare']]){
+  const e=compile(`sample :${alias}\nsleep 1`).loops[0].events[0];assert.equal(e.voice,voice);assert.equal(e.instrument,lane);
+ }
+ const events=compile('use_synth :fm_bell\nplay 60\nuse_synth :saw\nplay 62\nsample :bd_haus\nsample :drum_cymbal_open\nsleep 1').loops[0].events;
+ assert.deepEqual(events.map(e=>e.voice),['fm_bell','classic','classic','classic']);assert.equal(events[1].wave,'sawtooth');
+ for(const name of ['constructor','__proto__','toString','kick_808'])assert.throws(()=>compile(`use_synth :${name}\nplay 60\nsleep 1`),/Unsupported synth/);
+ for(const name of ['constructor','__proto__','toString','fm_bell'])assert.throws(()=>compile(`sample :${name}\nsleep 1`),/Unsupported sample/);
 });
 
 test('sample mappings, flats and sharp notes preserve timing',()=>{

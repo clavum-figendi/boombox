@@ -1,6 +1,6 @@
 const PREFIX = `boombox-${encodeURIComponent(new URL(self.registration.scope).pathname)}-`;
-const CACHE = PREFIX + '1.1.2';
-const FILES = ['./', './index.html', './styles.css', './js/app.js', './js/engine.js', './js/code.js', './icon.svg', './manifest.webmanifest', './LICENSE.txt'];
+const CACHE = PREFIX + '1.2.0';
+const FILES = ['./', './index.html', './styles.css', './js/app.js', './js/engine.js', './js/code.js', './js/variation.js', './icon.svg', './manifest.webmanifest', './LICENSE.txt'];
 const urls = FILES.map(p => new URL(p, self.registration.scope).href);
 async function check() {
   const c = await caches.open(CACHE), missing = [];

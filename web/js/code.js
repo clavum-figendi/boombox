@@ -1,6 +1,9 @@
 // Deliberately a parser, not a Ruby interpreter. No source is ever executed.
+import {INSTRUMENTS} from './engine.js';
 const SYNTHS = {sine:'sine', saw:'sawtooth', square:'square', tri:'triangle', triangle:'triangle', bass:'sawtooth', prophet:'sawtooth', beep:'sine'};
 const SAMPLES = {bd_haus:'kick', bd_tek:'kick', sn_dub:'snare', drum_snare_hard:'snare', drum_cymbal_closed:'hat', drum_cymbal_open:'hat'};
+// Synthesized analogues only: these names never fetch or decode a recording.
+const SAMPLE_VOICES={...Object.fromEntries(Object.entries(INSTRUMENTS).filter(([id,p])=>id!=='classic'&&p.lanes.some(lane=>['kick','snare','hat'].includes(lane))).map(([id])=>[id,id])),bd_808:'kick_808',bd_909:'kick_909',bd_industrial:'kick_industrial',sn_909:'snare',drum_clap:'clap',perc_snap:'rim',rim:'rim',hat_closed:'hat_closed',hat_open:'hat_open',hat_metallic:'hat_metallic'};
 const fail = (line, message) => { throw new SyntaxError(`Line ${line}: ${message}`); };
 function number(text, line, min, max) {
   if (!/^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text || '')) fail(line,'Expected a number');
@@ -19,7 +22,7 @@ function note(text,line) {
 export function compile(source) {
   if (typeof source !== 'string' || source.length>64000) throw new SyntaxError('Line 1: Source must be text under 64 KB');
   const lines = source.split(/\r?\n/).map((text,i)=>({text:text.replace(/\s+#.*$|^#.*$/,'').trim(),line:i+1})).filter(x=>x.text);
-  let cursor=0, bpm=132, wave='sine', expanded=0;
+  let cursor=0, bpm=132, wave='sine', voice='classic', expanded=0;
   const loops=[], names=new Set();
   function block(nested=false, depth=0) {
     if(depth>8) fail(lines[cursor]?.line || 1,'Nesting is limited to 8');
@@ -28,7 +31,13 @@ export function compile(source) {
       const {text,line}=lines[cursor++]; let m;
       if(text==='end') { if(!nested) fail(line,'Unexpected end'); return {events,beats}; }
       if((m=/^use_bpm\s+(.+)$/.exec(text))) { bpm=number(m[1],line,30,300); continue; }
-      if((m=/^use_synth\s+:(\w+)$/.exec(text))) { wave=SYNTHS[m[1]]; if(!wave) fail(line,'Unsupported synth'); continue; }
+      if((m=/^use_synth\s+:(\w+)$/.exec(text))) {
+        const id=m[1];
+        if(Object.prototype.hasOwnProperty.call(SYNTHS,id)){wave=SYNTHS[id];voice='classic';}
+        else if(Object.prototype.hasOwnProperty.call(INSTRUMENTS,id)&&INSTRUMENTS[id].lanes.includes('lead')){voice=id;wave=['sub','fm_bell','organ','glass_pad'].includes(id)?'sine':'sawtooth';}
+        else fail(line,'Unsupported synth');
+        continue;
+      }
       if((m=/^live_loop\s+:(\w+)\s+do$/.exec(text))) {
         if(nested) fail(line,'live_loop must be top-level');
         if(names.has(m[1])) fail(line,'Duplicate loop name'); names.add(m[1]);
@@ -45,7 +54,9 @@ export function compile(source) {
       }
       if((m=/^sleep\s+(.+)$/.exec(text))) { beats+=number(m[1],line,.001,64); if(beats>4096) fail(line,'Loop too long'); continue; }
       if((m=/^(play|sample)\s+([^,\s]+)(.*)$/.exec(text))) {
-        const event={beat:beats,instrument:m[1]==='play'?'lead':SAMPLES[m[2].replace(/^:/,'')],amp:.5,duration:.25,wave};
+        const sample=m[2].replace(/^:/,''),sampleVoice=Object.prototype.hasOwnProperty.call(SAMPLE_VOICES,sample)?SAMPLE_VOICES[sample]:null;
+        const lane=sampleVoice?INSTRUMENTS[sampleVoice].lanes[0]:Object.prototype.hasOwnProperty.call(SAMPLES,sample)?SAMPLES[sample]:null;
+        const event={beat:beats,instrument:m[1]==='play'?'lead':lane,voice:m[1]==='play'?voice:sampleVoice||'classic',amp:.5,duration:.25,wave};
         if(!event.instrument) fail(line,'Unsupported sample');
         if(m[1]==='play') event.note=note(m[2],line);
         if(m[3]) {
