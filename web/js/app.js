@@ -8,12 +8,15 @@ const STORE = 'boombox.project.v1', LOOK = 'boombox.look.v1';
 const VISITS = 'boombox.freshVisits.v1', WELCOME = 'boombox.welcome.v1';
 let freshVisits = true;
 function freshSound(key = settings.style) {
+  console.info('[boombox-init] generating preset');
   const words = new Uint32Array(1);
   let seed;
-  do { crypto.getRandomValues(words); seed = words[0] & 0x7fffffff; } while (!seed || seed === settings.seed);
+  let first=true;
+  do { crypto.getRandomValues(words); seed = words[0] & 0x7fffffff; if(first){console.info('[boombox-init] entropy seed '+seed);first=false;} } while (!seed || seed === settings.seed);
   const master = settings.master;
   randomizePreset(settings,key,seed);
   settings.master = master;
+  console.info('[boombox-init] preset generated');
 }
 const LIMITS = { bpm:[40,240], seed:[1,2147483647], root:[0,11], swing:[0,.45], density:[0,1], master:[0,1], cutoff:[40,20000], resonance:[0,18], drive:[0,1], delay:[0,.8], reverb:[0,1] };
 const SCALES = ['minor','major','dorian','phrygian','pentatonic'];
@@ -74,6 +77,7 @@ try {
   }
 } catch { announce('Stored project could not be read. Starting fresh; export JSON to keep a backup.'); }
 try { freshVisits = localStorage.getItem(VISITS) !== 'false'; } catch { /* Local preferences are optional. */ }
+console.info('[boombox-init] preferences loaded');
 if (freshVisits) freshSound();
 const engine = new Engine(settings);
 window.boombox = { engine, get settings() { return settings; } };
@@ -355,7 +359,9 @@ if(window.BoomboxAndroid&&location.origin==='https://boombox.local') {
 } else if('serviceWorker' in navigator)offlineRequest('CHECK_OFFLINE').then(showOffline).catch(error=>{$('#offlineStatus').textContent=errorMessage(error);});
 // Keep the focused control clear of the fixed transport without scrolling the whole page sideways.
 document.addEventListener('focusin',e=>{if(e.target.closest('dialog,.transport')||!e.target.getBoundingClientRect)return;requestAnimationFrame(()=>{const bottom=e.target.getBoundingClientRect().bottom,top=$('.transport').getBoundingClientRect().top;if(bottom>top-12)window.scrollBy(0,bottom-top+20);});});
+console.info('[boombox-init] rendering controls');
 renderSettings();persist();saveLook();syncPlay();decks.forEach((d,i)=>drawWave(i));
+console.info('[boombox-init] controls rendered');
 const chromium=/Chrom(?:e|ium)\/(\d+)/.exec(navigator.userAgent);
 if(chromium&&Number(chromium[1])<90)announce('Please update Android System WebView / Chrome to Chromium 90 or newer. This instrument requires a modern browser.');
 $('#helpSheet').append(make('p','fine','Browser and Android playback are foreground-only; the OS may suspend audio in the background. Android requires an updated System WebView (Chromium 90 or newer).'));

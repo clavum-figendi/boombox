@@ -32,4 +32,6 @@ jobs:
           name: android-verification
           path: |
             android/offline-test.log
+            android/logcat.log
+            android/connectivity.log
             android/app/build/reports/lint-results-debug.html

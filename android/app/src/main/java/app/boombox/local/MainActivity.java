@@ -58,6 +58,10 @@ public class MainActivity extends Activity {
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onConsoleMessage(android.webkit.ConsoleMessage message) {
+                android.util.Log.i("BoomboxWeb", message.sourceId() + ":" + message.lineNumber() + " " + message.message());
+                return true;
+            }
             @Override public boolean onShowFileChooser(WebView w, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (chooser != null) chooser.onReceiveValue(null);
                 chooser = callback;

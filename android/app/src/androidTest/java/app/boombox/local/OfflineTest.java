@@ -13,9 +13,21 @@ public class OfflineTest extends Instrumentation {
     private String eval(String script) throws Exception {
         Bundle progress = new Bundle();progress.putString("stream", "EVAL: " + script + "\n");sendStatus(0, progress);
         ArrayBlockingQueue<String> q = new ArrayBlockingQueue<>(1);
-        runOnMainSync(() -> app.web.evaluateJavascript(script, q::offer));
+        runOnMainSync(() -> {
+            android.util.Log.i("BoomboxTest", "Submitting JS; URL=" + app.web.getUrl() + " progress=" + app.web.getProgress());
+            app.web.evaluateJavascript(script, value -> {
+                android.util.Log.i("BoomboxTest", "Callback: " + value);q.offer(value);
+            });
+            android.util.Log.i("BoomboxTest", "evaluateJavascript returned");
+        });
         String result = q.poll(15, TimeUnit.SECONDS);
-        if (result == null) throw new AssertionError("JavaScript callback timeout: " + script);
+        if (result == null) {
+            for (java.util.Map.Entry<Thread,StackTraceElement[]> entry : Thread.getAllStackTraces().entrySet()) {
+                android.util.Log.e("BoomboxTest", "THREAD " + entry.getKey().getName() + " " + entry.getKey().getState());
+                for (StackTraceElement frame : entry.getValue()) android.util.Log.e("BoomboxTest", "  " + frame);
+            }
+            throw new AssertionError("JavaScript callback timeout: " + script);
+        }
         return result;
     }
     private void awaitBundledLoad(int previous) throws Exception {
@@ -31,6 +43,7 @@ public class OfflineTest extends Instrumentation {
             Intent launch = new Intent(getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             app = (MainActivity) startActivitySync(launch);
             awaitBundledLoad(0);
+            eval("1+1");
             long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
             while (!"true".equals(eval("location.href==='https://boombox.local/' && document.documentElement.dataset.ready==='true' && !!window.boombox"))) {
                 if (System.nanoTime() > end) throw new AssertionError("Bundled offline UI not ready");

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'timeout 10s adb logcat -d -v threadtime > android/logcat.log || true' EXIT
 # Only trusted fixed instrumentation scripts are evaluated; no user code enters this harness.
 timeout 120s adb install --no-streaming -r android/app/build/outputs/apk/debug/app-debug.apk
 timeout 120s adb install --no-streaming -r android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
