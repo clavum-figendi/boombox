@@ -11,17 +11,26 @@ public class OfflineTest extends Instrumentation {
     @Override public void onCreate(Bundle args) { super.onCreate(args); start(); }
     private MainActivity app;
     private String eval(String script) throws Exception {
+        Bundle progress = new Bundle();progress.putString("stream", "EVAL: " + script + "\n");sendStatus(0, progress);
         ArrayBlockingQueue<String> q = new ArrayBlockingQueue<>(1);
         runOnMainSync(() -> app.web.evaluateJavascript(script, q::offer));
         String result = q.poll(15, TimeUnit.SECONDS);
-        if (result == null) throw new AssertionError("JavaScript callback timeout");
+        if (result == null) throw new AssertionError("JavaScript callback timeout: " + script);
         return result;
+    }
+    private void awaitBundledLoad(int previous) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
+        while (app.bundledLoads <= previous) {
+            if (System.nanoTime() > deadline) throw new AssertionError("Bundled document did not finish loading");
+            Thread.sleep(100);
+        }
     }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
             Intent launch = new Intent(getTargetContext(), MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             app = (MainActivity) startActivitySync(launch);
+            awaitBundledLoad(0);
             long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
             while (!"true".equals(eval("location.href==='https://boombox.local/' && document.documentElement.dataset.ready==='true' && !!window.boombox"))) {
                 if (System.nanoTime() > end) throw new AssertionError("Bundled offline UI not ready");
@@ -39,7 +48,9 @@ public class OfflineTest extends Instrumentation {
             eval("document.querySelector('#variation').click();true");
             if (seed.equals(eval("window.boombox.settings.seed"))) throw new AssertionError("Variation did not change the seed");
             String reloadSeed = eval("window.boombox.settings.seed");
+            int previousLoads = app.bundledLoads;
             runOnMainSync(() -> app.web.reload());
+            awaitBundledLoad(previousLoads);
             end = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
             while (!"true".equals(eval("document.documentElement.dataset.ready==='true' && !!window.boombox && window.boombox.settings.seed!==" + reloadSeed))) {
                 if (System.nanoTime() > end) throw new AssertionError("Offline refresh did not produce a fresh sound");

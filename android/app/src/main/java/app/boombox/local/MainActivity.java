@@ -22,6 +22,7 @@ import java.util.Map;
 /** Bundled-only HTTPS origin. No Internet, microphone or shared-storage permission. */
 public class MainActivity extends Activity {
     WebView web;
+    volatile int bundledLoads;
     private ValueCallback<Uri[]> chooser;
     private byte[] pendingExport;
     @Override public void onCreate(Bundle state) {
@@ -35,6 +36,9 @@ public class MainActivity extends Activity {
         web.getSettings().setMediaPlaybackRequiresUserGesture(true);
         web.addJavascriptInterface(new ExportBridge(), "BoomboxAndroid");
         web.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView v, String url) {
+                if ("https://boombox.local/".equals(url)) bundledLoads++;
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 return !"https://boombox.local/".equals(r.getUrl().toString());
             }
