@@ -18,7 +18,8 @@ with sync_playwright() as p:
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
     page.goto(URL)
-    page.wait_for_function("document.documentElement.dataset.ready === 'true' && !!window.boombox")
+    expect(page.locator('html')).to_have_attribute('data-ready','true')
+    assert page.evaluate('!!window.boombox')
     result = page.evaluate("""async () => {
       const {Engine,defaultSettings,applyStyle,STYLES}=await import('./js/engine.js');
       const {compile,EXAMPLES}=await import('./js/code.js');
@@ -48,7 +49,8 @@ with sync_playwright() as p:
     page.screenshot(path=str(OUT/'boombox-mobile.png'), full_page=True)
     page.evaluate('navigator.serviceWorker.ready.then(()=>true)')
     page.reload()
-    page.wait_for_function('navigator.serviceWorker.controller !== null')
+    page.evaluate('navigator.serviceWorker.ready.then(()=>true)')
+    assert page.evaluate('navigator.serviceWorker.controller !== null')
     def sw(typ):
         return page.evaluate("""type=>new Promise((resolve,reject)=>{const c=new MessageChannel();c.port1.onmessage=e=>resolve(e.data);navigator.serviceWorker.controller.postMessage({type},[c.port2]);setTimeout(()=>reject(Error('SW timeout')),15000);})""", typ)
     assert sw('SAVE_OFFLINE')['ready']
@@ -57,7 +59,7 @@ with sync_playwright() as p:
     assert sw('SAVE_OFFLINE')['ready'], 'Repair failed'
     context.set_offline(True)
     page.reload()
-    page.wait_for_function("document.documentElement.dataset.ready === 'true'")
+    expect(page.locator('html')).to_have_attribute('data-ready','true')
     page.evaluate('window.boombox.engine.play()')
     page.wait_for_timeout(700)
     assert page.evaluate('window.boombox.engine.playing')
@@ -72,7 +74,7 @@ with sync_playwright() as p:
     interrupted.route('**/LICENSE.txt', lambda route: route.abort())
     failed = interrupted.new_page()
     failed.goto(URL)
-    failed.wait_for_function("document.documentElement.dataset.ready === 'true'")
+    expect(failed.locator('html')).to_have_attribute('data-ready','true')
     expect(failed.locator('#offlineStatus')).to_contain_text('did not finish', timeout=20000)
     interrupted.unroute('**/LICENSE.txt')
     failed.locator('[data-open="settingsSheet"]').click()

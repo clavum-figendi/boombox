@@ -6,8 +6,8 @@ android {
         applicationId 'app.boombox.local'
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName '1.2.0'
+        versionCode 6
+        versionName '1.2.1'
         testInstrumentationRunner 'app.boombox.local.OfflineTest'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }

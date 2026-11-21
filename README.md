@@ -10,6 +10,12 @@ An on-device electronic music instrument: generative groovebox, two local remix 
 
 ## Workspaces
 
+### New in 1.2.1 — Safari recovery and output level
+
+Audio initialization now resumes both suspended and iOS-interrupted contexts inside the playback gesture. An interrupted player shows Play again and recovers on one tap, without auto-starting on visibility changes. Where supported, the Audio Session API is asked for the music playback category; unsupported platforms keep their normal path. Startup import failures now show a retry panel instead of leaving inert controls. **Help → Local audio diagnostics** can copy browser/audio-state details for a tester to share explicitly; no project, code, file names or secret values are included or uploaded.
+
+New projects start at **85% master**, and nominal output normalization is stronger while retaining the compressor/limiter. The tested seeded dark-techno render is approximately **4.4 dB louder** than 1.2.0; saved master-slider values (including zero) remain unchanged. All 96 Chromium level/headroom renders passed below clipping. Seven recovery/diagnostic scenarios pass in real Chromium and Linux WebKit with an iPhone touch/viewport profile. This is not physical iPhone verification, and the reported first-launch failure was not reproduced on the untouched release in Linux WebKit. Testers can use the new diagnostics if their device still fails.
+
 ### New in 1.2
 
 The scale menu now covers all seven diatonic modes, harmonic/melodic minor, pentatonic and blues scales, whole-tone and diminished colors, and darker regional minor variants. Bass, lead and pad generation follows the chosen intervals and root. Select instruments independently per mixer lane: sub/Reese/acid bass, FM bells, plucks, supersaws, organ and glassy pads, plus expanded kick, snare/clap/rim and hat percussion. Instrument choice and waveform/decay are separate tone controls where supported; existing projects retain their classic voice when an instrument field is absent.

@@ -43,7 +43,25 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const decks = [{loaded:false,playing:false,duration:0,peaks:[]},{loaded:false,playing:false,duration:0,peaks:[]}];
 function announce(message, target = '#status') { $(target).textContent = message; }
 function errorMessage(error) { return error instanceof Error ? error.message : String(error); }
-function guarded(fn, target='#status') { return async event => { try { await fn(event); } catch(error) { announce(errorMessage(error),target); } }; }
+function diagnosticError(error) {
+  // Error messages may contain user code, file names or URLs. Share only a category.
+  const names=['Error','TypeError','SyntaxError','NotAllowedError','NotSupportedError','InvalidStateError','AbortError'];
+  return names.includes(error?.name) ? `${error.name}: action failed (details stay in the on-screen status)` : 'Action failed';
+}
+let lastAudioError = '';
+function renderDiagnostics() {
+  const output=$('#audioDiagnostics');
+  if(!output)return;
+  output.textContent=[
+    `Browser: ${navigator.userAgent}`,
+    `Audio context: ${engine.context?.state || 'not initialized'}`,
+    `Audio enabled: ${started && engine.context?.state==='running'}`,
+    `Secure context: ${window.isSecureContext}`,
+    `Startup error: ${window.boomboxBootError || 'none'}`,
+    `Last audio/action error: ${lastAudioError || 'none'}`
+  ].join('\n');
+}
+function guarded(fn, target='#status') { return async event => { try { await fn(event); } catch(error) { lastAudioError=diagnosticError(error);announce(errorMessage(error),target);syncPlay();renderDiagnostics(); } }; }
 function safeSettings(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid project: expected a settings object.');
   const result = defaultSettings();
@@ -261,13 +279,36 @@ $('#freshVisits').addEventListener('change',e=>{
   catch { announce('Visit preference applies now, but browser storage is unavailable.','#settingsStatus'); }
 });
 function syncPlay() {
-  document.body.classList.toggle('is-playing',!!engine.playing);$('#play').replaceChildren(document.createTextNode(engine.playing?'Ⅱ ':'▶ '),make('span','',engine.playing?'Pause':'Play'));
-  $('#play').setAttribute('aria-label',engine.playing?'Pause groovebox':'Play groovebox');$('#playState').textContent=engine.playing?'PLAYING':'STANDBY';scheduleVisuals();drawScore();
+  const playing=engine.playing && engine.context?.state==='running';
+  document.body.classList.toggle('is-playing',playing);$('#play').replaceChildren(document.createTextNode(playing?'Ⅱ ':'▶ '),make('span','',playing?'Pause':'Play'));
+  $('#play').setAttribute('aria-label',playing?'Pause groovebox':'Play groovebox');$('#playState').textContent=playing?'PLAYING':'STANDBY';scheduleVisuals();drawScore();
 }
-async function initAudio() { await engine.init();started=true; }
+const observedContexts = new WeakSet();
+function subscribeAudioContext() {
+  const context=engine.context;
+  if(!context || observedContexts.has(context))return;
+  observedContexts.add(context);
+  context.addEventListener('statechange',()=>{
+    if(context!==engine.context)return;
+    syncPlay();renderVariationStatus();renderDiagnostics();
+    if(context.state!=='running')announce('Audio interrupted/paused by device. Tap Play or Run code to resume.');
+  });
+}
+async function initAudio() {
+  // Invoke init/resume in the original user gesture, before the first await.
+  const pending=engine.init();
+  subscribeAudioContext();
+  try {await pending;started=true;}
+  catch(error) {lastAudioError=diagnosticError(error);throw error;}
+  finally {syncPlay();renderDiagnostics();}
+}
 async function togglePlay() {
-  if(engine.playing) { variationTick();engine.pause();clearCadenceTimer(); }
-  else {await initAudio();await engine.play();audioTick=engine.context.currentTime;if(cadenceTimer===null)cadenceTimer=setInterval(variationTick,250);}
+  const running=engine.context?.state==='running';
+  if(engine.playing && running) { variationTick();engine.pause();clearCadenceTimer(); }
+  else {
+    if(engine.playing) {engine.pause();clearCadenceTimer();}
+    await initAudio();await engine.play();audioTick=engine.context.currentTime;if(cadenceTimer===null)cadenceTimer=setInterval(variationTick,250);
+  }
   syncPlay();renderVariationStatus();announce(engine.playing?'Groovebox playing.':'Groovebox paused.');
 }
 function stopAll() {
@@ -370,7 +411,7 @@ function buildDeck(index) {
       const patch={playing:false,start:0,end:1,reverse:false};for(const key of ['gain','rate','low','mid','high','cutoff'])if(typeof d[key]==='number')patch[key]=d[key];engine.deck(index,patch);drawWave(index);announce(`Deck ${index?'B':'A'} ready. ${track.name}`);
     } catch(error) {name.textContent=decks[index].loaded?'Previous audio remains loaded.':'Could not decode this audio file.';throw error;} finally {file.disabled=false;file.value='';}
   }));
-  play.addEventListener('click',guarded(async()=>{if(!decks[index].loaded)throw new Error('Load a local audio file first.');await initAudio();const playing=!decks[index].playing;engine.deck(index,{playing});decks[index].playing=playing;play.textContent=playing?'Ⅱ Pause':'▶ Play';play.setAttribute('aria-pressed',String(playing));announce(`Deck ${index?'B':'A'} ${playing?'playing':'paused'}.`);}));
+  play.addEventListener('click',guarded(async()=>{if(!decks[index].loaded)throw new Error('Load a local audio file first.');const playing=!decks[index].playing || engine.context?.state!=='running';if(playing && decks[index].playing)engine.deck(index,{playing:false});await initAudio();engine.deck(index,{playing});decks[index].playing=playing;play.textContent=playing?'Ⅱ Pause':'▶ Play';play.setAttribute('aria-pressed',String(playing));announce(`Deck ${index?'B':'A'} ${playing?'playing':'paused'}.`);}));
   stop.addEventListener('click',guarded(()=>{if(decks[index].loaded)engine.deck(index,{playing:false});decks[index].playing=false;play.textContent='▶ Play';play.setAttribute('aria-pressed','false');}));
   reverse.addEventListener('click',guarded(()=>{if(!decks[index].loaded)throw new Error('Load audio before reversing it.');const reversed=reverse.getAttribute('aria-pressed')!=='true';engine.deck(index,{reverse:reversed});reverse.setAttribute('aria-pressed',String(reversed));}));
 }
@@ -432,4 +473,18 @@ console.info('[boombox-init] controls rendered');
 const chromium=/Chrom(?:e|ium)\/(\d+)/.exec(navigator.userAgent);
 if(chromium&&Number(chromium[1])<90)announce('Please update Android System WebView / Chrome to Chromium 90 or newer. This instrument requires a modern browser.');
 $('#helpSheet').append(make('p','fine','Browser and Android playback are foreground-only; the OS may suspend audio in the background. Android requires an updated System WebView (Chromium 90 or newer).'));
+$('#copyDiagnostics').addEventListener('click',async()=>{
+  renderDiagnostics();
+  try {
+    if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText($('#audioDiagnostics').textContent);
+    $('#diagnosticsStatus').textContent='Diagnostics copied. Nothing was uploaded.';
+  } catch {
+    const selection=window.getSelection(),range=document.createRange();
+    range.selectNodeContents($('#audioDiagnostics'));selection?.removeAllRanges();selection?.addRange(range);
+    $('#diagnosticsStatus').textContent='Copy is unavailable here. Select and copy the diagnostics below, or take a screenshot. Nothing was uploaded.';
+  }
+});
+$$('[data-open="helpSheet"]').forEach(button=>button.addEventListener('click',renderDiagnostics));
+renderDiagnostics();
 document.documentElement.dataset.ready='true';

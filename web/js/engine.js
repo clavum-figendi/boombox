@@ -60,7 +60,7 @@ const RHYTHMS={
  dub:['8','8','2,6,10,14','0,6,10','6,14','4,12']
 };
 export function defaultSettings(){
- const settings=applyStyle({seed:42,master:.65},'techno');
+ const settings=applyStyle({seed:42,master:.85},'techno');
  for(const channel of Object.values(settings.channels))channel.instrument='classic';
  return settings;
 }
@@ -113,7 +113,7 @@ function varyPatterns(settings,key,pick,random){
 /** Mutate a complete genre preset; explicit seeds are reproducible across prior states. */
 export function randomizePreset(settings,key,seed){
  if(!Number.isInteger(seed)||seed<1||seed>2147483647)throw new RangeError('Seed must be an integer from 1 to 2147483647');
- applyStyle(settings,key);settings.seed=seed;settings.master=clamp(settings.master??.65,0,1);
+ applyStyle(settings,key);settings.seed=seed;settings.master=clamp(settings.master??.85,0,1);
  const random=rng(seed^0x9e3779b9);for(let i=0;i<8;i++)random();
  const between=([low,high])=>low+(high-low)*random(),pick=values=>values[Math.floor(random()*values.length)];
  const p=PRESET_VOICES[key],energy=random(),warmth=random(),space=between(p.space);
@@ -167,7 +167,7 @@ function connectGraph(context,settings,destination){
 }
 function updateGraph(context,g,s,initial=false){
  const set=(param,value)=>initial?param.setValueAtTime(value,context.currentTime):param.setTargetAtTime(value,context.currentTime,.015);
- set(g.filter.frequency,clamp(s.cutoff,40,context.sampleRate*.45));set(g.filter.Q,clamp(s.resonance,.1,18));set(g.master.gain,clamp(s.master,0,1)*.7);
+ set(g.filter.frequency,clamp(s.cutoff,40,context.sampleRate*.45));set(g.filter.Q,clamp(s.resonance,.1,18));set(g.master.gain,clamp(s.master,0,1)*.9);
  const amount=clamp(s.drive,0,1)*40, curve=new Float32Array(1024);
  for(let i=0;i<curve.length;i++){const x=i*2/(curve.length-1)-1;curve[i]=Math.tanh(x*(1+amount))/Math.tanh(1+amount);}
  g.drive.curve=curve;g.drive.oversample='2x';
@@ -242,7 +242,14 @@ export class Engine {
  get playing(){return this._playing;}
  get step(){if(this._playing&&this.context)while(this.stepTimeline.length&&this.stepTimeline[0].time<=this.context.currentTime)this._step=this.stepTimeline.shift().step;return this._step;}
  get analyser(){return this.graph?.analyser||null;}
- async init(){if(!this.context){const Context=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Context)throw new Error('Web Audio is not available in this browser');this.context=new Context();this.graph=connectGraph(this.context,this.settings,this.context.destination);}if(this.context.state==='suspended')await this.context.resume();return this;}
+ async init(){
+  // This is a music player, not ambient UI sound. Unsupported session APIs stay optional.
+  try{const session=globalThis.navigator?.audioSession;if(session&&session.type!=='playback')session.type='playback';}catch{}
+  if(!this.context){const Context=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Context)throw new Error('Web Audio is not available in this browser');this.context=new Context();this.graph=connectGraph(this.context,this.settings,this.context.destination);}
+  // Call resume before the first await, while the Play/Run/deck gesture is still active.
+  if(this.context.state==='suspended'||this.context.state==='interrupted')await this.context.resume();
+  return this;
+ }
  async play(){await this.init();if(this._playing)return;this._playing=true;this.nextStep=this.context.currentTime+.04;this.stepTimeline=[];this._schedule();this.timer=setInterval(()=>this._schedule(),25);}
  _schedule(){
   this._step=this.step;const beat=60/clamp(this.settings.bpm,30,300),now=this.context.currentTime;
